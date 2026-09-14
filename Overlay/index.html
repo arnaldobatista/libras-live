@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Libras Live · Overlay</title>
+    <link rel="stylesheet" href="overlay.css?v=10" />
+  </head>
+  <body>
+    <div id="gameContainer"></div>
+
+    <div id="loading" hidden>
+      <div class="bar"><div class="fill"></div></div>
+    </div>
+
+    <aside id="debug" hidden>
+      <div><b>ws</b> <span id="dbg-ws">—</span></div>
+      <div><b>player</b> <span id="dbg-player">carregando</span></div>
+      <div><b>fala</b> <span id="dbg-text">—</span></div>
+      <div><b>glosa</b> <span id="dbg-gloss">—</span></div>
+    </aside>
+
+    <script src="vlibras/unity-loader.js"></script>
+    <script src="overlay.js?v=10"></script>
+  </body>
+</html>
