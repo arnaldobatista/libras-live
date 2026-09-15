@@ -8,11 +8,13 @@
 //   swift run libras-probe gloss "texto em português"
 //   swift run libras-probe simulate <sessao.tsv> [--timeline] [--grid]   (compara configurações com uma live real)
 //   swift run libras-probe log <sessao.jsonl>                   (log de sessão em texto legível)
+//   swift run libras-probe rewrite [--model nome] [--timeout s] "frase"   (os três modos da IA local, com o motor embutido)
 
 @preconcurrency import AVFoundation
 import AudioCapture
 import Foundation
 import LibrasCore
+import LocalAI
 import os
 import OverlayServer
 import Transcription
@@ -315,6 +317,46 @@ case "simulate":
             report.timeline.forEach { print($0) }
         }
     }
+
+case "rewrite":
+    var rest = Array(arguments.dropFirst())
+    func option(_ name: String) -> String? {
+        guard let index = rest.firstIndex(of: name), index + 1 < rest.count else { return nil }
+        let value = rest[index + 1]
+        rest.removeSubrange(index...(index + 1))
+        return value
+    }
+    let modelName = option("--model") ?? ModelCatalog.defaultModel
+    let timeout = option("--timeout").flatMap(Double.init) ?? 20
+    let text = rest.joined(separator: " ")
+    guard !text.isEmpty else { fail("Uso: libras-probe rewrite [--model nome] [--timeout s] \"frase\"") }
+
+    // Mesmo motor e pasta de modelos do app.
+    let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("LibrasLive/ollama", isDirectory: true)
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let binary = ProcessInfo.processInfo.environment["LIBRAS_OLLAMA_BIN"].map { URL(fileURLWithPath: $0) }
+        ?? root.appendingPathComponent("Vendor/ollama/ollama")
+    var configuration = OllamaEngine.Configuration(binary: binary, supportDirectory: support, preferredPort: 11459)
+    configuration.logFile = FileManager.default.temporaryDirectory.appendingPathComponent("libras-probe-ollama.log")
+    configuration.pidFile = FileManager.default.temporaryDirectory.appendingPathComponent("libras-probe-ollama.pid")
+    let engine = OllamaEngine(configuration: configuration)
+    let started = Date()
+    let port = try await engine.start()
+    print(String(format: "Motor pronto na porta %d em %.1f s · modelo %@", port, Date().timeIntervalSince(started), modelName))
+    let client = OllamaClient(port: port)
+    let installed = try await client.installedModels().map(\.name)
+    guard installed.contains(where: { ModelCatalog.sameModel($0, modelName) }) else {
+        await engine.stop()
+        fail("Modelo \(modelName) não instalado. Instalados: \(installed.joined(separator: ", "))")
+    }
+    let rewriter = PhraseRewriter()
+    for mode in RewriteMode.allCases {
+        let result = await rewriter.rewrite(text, mode: mode, context: [], model: modelName, client: client, timeout: timeout)
+        let reason = result.reason.map { " (\($0))" } ?? ""
+        print(String(format: "%-9@ %.2f s  %@%@\n          %@", mode.rawValue, result.seconds, result.status.rawValue, reason, result.text))
+    }
+    await engine.stop()
 
 default:
     fail("Comando desconhecido: \(command)")

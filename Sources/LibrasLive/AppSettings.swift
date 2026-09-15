@@ -15,6 +15,38 @@ enum Avatar: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+/// Reescrita das frases com o modelo local antes da tradução.
+struct RewriteSettings: Codable, Equatable {
+    var enabled = false
+    var mode: RewriteMode = .faithful
+    /// Nome do modelo no Ollama (ex.: "qwen3:4b-instruct-2507-q4_K_M").
+    var model: String?
+    /// Prazo por trecho (s); passou, vai o texto original.
+    var timeout: Double = 3
+    /// Manda as frases anteriores junto, para a IA entender o assunto.
+    var useContext = true
+    /// Quanto da fala vai de uma vez para a IA.
+    var grouping = RewriteGrouping()
+
+    init() {}
+
+    /// Prazo para um trecho: o tempo máximo vale até 20 palavras; trechos maiores ganham proporcionalmente (até o dobro).
+    func deadline(forWords words: Int) -> TimeInterval {
+        timeout * min(2, max(1, Double(words) / 20))
+    }
+
+    init(from decoder: Decoder) throws {
+        let defaults = RewriteSettings()
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? defaults.enabled
+        mode = (try? c.decodeIfPresent(RewriteMode.self, forKey: .mode)) ?? defaults.mode
+        model = try c.decodeIfPresent(String.self, forKey: .model)
+        timeout = try c.decodeIfPresent(Double.self, forKey: .timeout) ?? defaults.timeout
+        useContext = try c.decodeIfPresent(Bool.self, forKey: .useContext) ?? defaults.useContext
+        grouping = (try? c.decodeIfPresent(RewriteGrouping.self, forKey: .grouping)) ?? defaults.grouping
+    }
+}
+
 /// Preferências persistidas em UserDefaults.
 struct AppSettings: Codable, Equatable {
     var deviceUID: String?
@@ -43,6 +75,8 @@ struct AppSettings: Codable, Equatable {
     var logEnabled: Bool = true
     /// Cores e logo do avatar.
     var appearance = AvatarAppearance()
+    /// Reescrita com IA local.
+    var rewrite = RewriteSettings()
 
     var glossOptions: GlossOptimizer.Options {
         GlossOptimizer.Options(removePunctuationPauses: removePauses, unknownWords: unknownWords)
@@ -56,7 +90,12 @@ struct AppSettings: Codable, Equatable {
             policy.mergePhrases ? "sim" : "não", policy.maxBatchSeconds,
             policy.compactWhenBehind ? "sim" : "não", policy.dropRepeats ? "sim" : "não",
             unknownWords.rawValue, removePauses ? "remove" : "mantém", pauseCommitSeconds
-        )
+        ) + (rewrite.enabled ? String(
+            format: " · IA %@ (%@, %.1fs, %@ %d%@, pausa %.1fs)",
+            rewrite.mode.rawValue, rewrite.model ?? "sem modelo", rewrite.timeout,
+            rewrite.grouping.mode == .sentence ? "até o ponto, máx." : "palavras", rewrite.grouping.words,
+            rewrite.grouping.mode == .words ? "+\(rewrite.grouping.extraWords)" : "", rewrite.grouping.pauseSeconds
+        ) : "")
     }
 
     var gainLinear: Float { Float(pow(10, gainDB / 20)) }
@@ -102,6 +141,7 @@ struct AppSettings: Codable, Equatable {
         commitOnComma = try c.decodeIfPresent(Bool.self, forKey: .commitOnComma) ?? defaults.commitOnComma
         logEnabled = try c.decodeIfPresent(Bool.self, forKey: .logEnabled) ?? defaults.logEnabled
         appearance = (try? c.decodeIfPresent(AvatarAppearance.self, forKey: .appearance)) ?? defaults.appearance
+        rewrite = (try? c.decodeIfPresent(RewriteSettings.self, forKey: .rewrite)) ?? defaults.rewrite
     }
 }
 
@@ -124,6 +164,32 @@ enum AppPaths {
     /// Logo original enviada, `logo.png` (500 × 500 pronta para o player) e `blank.png`.
     static var appearance: URL { support.appendingPathComponent("appearance", isDirectory: true) }
     static var signCache: URL { support.appendingPathComponent("signs", isDirectory: true) }
+
+    /// Motor de IA: modelos, chave e log. `LIBRAS_OLLAMA_DIR` aponta para outra pasta (ex.: reaproveitar modelos em testes).
+    static var ollama: URL {
+        if let override = ProcessInfo.processInfo.environment["LIBRAS_OLLAMA_DIR"] {
+            return URL(fileURLWithPath: override, isDirectory: true)
+        }
+        return support.appendingPathComponent("ollama", isDirectory: true)
+    }
+
+    /// Executável do Ollama: variável de ambiente → dentro do .app → Vendor/ do projeto (desenvolvimento).
+    static func ollamaBinary() -> URL {
+        let fm = FileManager.default
+        var candidates: [URL] = []
+        if let env = ProcessInfo.processInfo.environment["LIBRAS_OLLAMA_BIN"] {
+            candidates.append(URL(fileURLWithPath: env))
+        }
+        if let resources = Bundle.main.resourceURL {
+            candidates.append(resources.appendingPathComponent("ollama/ollama"))
+        }
+        var dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        for _ in 0..<4 {
+            dir.deleteLastPathComponent()
+            candidates.append(dir.appendingPathComponent("Vendor/ollama/ollama"))
+        }
+        return candidates.first { fm.isExecutableFile(atPath: $0.path) } ?? candidates.first!
+    }
 
     /// Pasta do overlay: variável de ambiente → dentro do .app → pasta do projeto (desenvolvimento).
     static func overlayDirectory() -> URL? {

@@ -2,44 +2,44 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>pt-BR</string>
-    <key>CFBundleDisplayName</key>
-    <string>Libras Live</string>
-    <key>CFBundleExecutable</key>
-    <string>LibrasLive</string>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
-    <key>CFBundleIconName</key>
-    <string>AppIcon</string>
-    <key>NSAccentColorName</key>
-    <string>AccentColor</string>
-    <key>CFBundleIdentifier</key>
-    <string>br.com.puroesimples.libraslive</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-    <key>CFBundleName</key>
-    <string>Libras Live</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>LSApplicationCategoryType</key>
-    <string>public.app-category.video</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>26.0</string>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>O Libras Live ouve o canal de áudio escolhido para transcrever a fala e traduzir para Libras.</string>
-    <key>NSSpeechRecognitionUsageDescription</key>
-    <string>O Libras Live transcreve a fala no próprio Mac para gerar a tradução em Libras.</string>
-    <key>NSAppTransportSecurity</key>
-    <dict>
-        <key>NSAllowsLocalNetworking</key>
-        <true/>
-    </dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>pt-BR</string>
+	<key>CFBundleDisplayName</key>
+	<string>Libras Live</string>
+	<key>CFBundleExecutable</key>
+	<string>LibrasLive</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>br.com.puroesimples.libraslive</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Libras Live</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.2.1</string>
+	<key>CFBundleVersion</key>
+	<string>3</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.video</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>26.0</string>
+	<key>NSAccentColorName</key>
+	<string>AccentColor</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>O Libras Live ouve o canal de áudio escolhido para transcrever a fala e traduzir para Libras.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>O Libras Live transcreve a fala no próprio Mac para gerar a tradução em Libras.</string>
 </dict>
 </plist>

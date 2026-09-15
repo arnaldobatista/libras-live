@@ -1,4 +1,5 @@
 import LibrasCore
+import LocalAI
 import SwiftUI
 
 extension FeedEntry.Status {
@@ -53,6 +54,13 @@ struct FeedRow: View {
                     .foregroundStyle(entry.status == .dropped ? .secondary : .primary)
                     .lineLimit(3)
 
+                if let rewrite = entry.rewrite, rewrite.status == .rewritten, rewrite.result.hasPrefix(entry.text) {
+                    Text("Falado: \(rewrite.original)")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(2)
+                }
+
                 if let gloss = entry.signed ?? entry.gloss {
                     Text(gloss.isEmpty ? "—" : gloss)
                         .font(.system(.callout, design: .monospaced))
@@ -69,6 +77,18 @@ struct FeedRow: View {
                     }
                     if entry.source == .fallback {
                         Tag(text: "sem tradução", symbol: "character.bubble", tint: .red)
+                    }
+                    if let rewrite = entry.rewrite {
+                        switch rewrite.status {
+                        case .rewritten:
+                            Tag(text: "IA · \(rewrite.mode.title.lowercased())", symbol: "sparkles", tint: .accentColor)
+                        case .unchanged:
+                            Tag(text: "IA · ok", symbol: "sparkles")
+                                .help("A IA manteve as palavras (só pontuação ou maiúsculas)")
+                        case .fallback:
+                            Tag(text: "original", symbol: "sparkles", tint: .orange)
+                                .help(rewrite.reason ?? "")
+                        }
                     }
                     if let speed = entry.speed, speed > 1.01 {
                         Tag(text: String(format: "%.1f×", speed), symbol: "hare")
@@ -126,6 +146,23 @@ struct FeedInspector: View {
                     LabeledContent("Horário", value: entry.date.formatted(date: .omitted, time: .standard))
                     if let reason = entry.dropReason {
                         LabeledContent("Motivo", value: reason)
+                    }
+                }
+                if let rewrite = entry.rewrite {
+                    Section("Reescrita com IA") {
+                        LabeledContent("Falado") {
+                            Text(rewrite.original).textSelection(.enabled)
+                        }
+                        if rewrite.status == .rewritten {
+                            LabeledContent("Reescrito") {
+                                Text(rewrite.result).textSelection(.enabled)
+                            }
+                        }
+                        LabeledContent("Resultado", value: rewrite.reason.map { "\(rewrite.status.title): \($0)" } ?? rewrite.status.title)
+                        LabeledContent("Modo", value: rewrite.mode.title)
+                        LabeledContent("Modelo", value: rewrite.model)
+                        LabeledContent("Tempo da IA", value: String(format: "%.2f s", rewrite.seconds))
+                        LabeledContent("Espera pelo fim da frase", value: String(format: "%.1f s", rewrite.waited))
                     }
                 }
                 Section("Glosa") {

@@ -8,6 +8,7 @@ APP="$ROOT/build/Libras Live.app"
 
 cd "$ROOT"
 "$ROOT/Scripts/fetch-vlibras.sh"
+"$ROOT/Scripts/fetch-ollama.sh"
 
 echo "Compilando ($CONFIG)..."
 swift build -c "$CONFIG" --product LibrasLive
@@ -19,6 +20,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/LibrasLive"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 rsync -a --delete --exclude ".DS_Store" "$ROOT/Overlay/" "$APP/Contents/Resources/Overlay/"
+# Motor de IA local (Ollama) com as licenças.
+rsync -a --delete --exclude ".DS_Store" "$ROOT/Vendor/ollama/" "$APP/Contents/Resources/ollama/"
 if [[ -d "$ROOT/Resources/Avatars" ]]; then
   rsync -a --delete --exclude ".DS_Store" "$ROOT/Resources/Avatars/" "$APP/Contents/Resources/Avatars/"
 fi
@@ -36,6 +39,7 @@ xcrun actool "$ROOT/Resources/AppIcon.icon" "$ROOT/Resources/Assets.xcassets" \
   --output-format human-readable-text > "$ASSETS_TMP/actool.log" 2>&1 || { cat "$ASSETS_TMP/actool.log"; exit 1; }
 rm -rf "$ASSETS_TMP"
 
+codesign --force --sign - --timestamp=none "$APP/Contents/Resources/ollama/ollama" "$APP/Contents/Resources/ollama/llama-server"
 codesign --force --sign - --timestamp=none "$APP"
 
 echo "OK: $APP"

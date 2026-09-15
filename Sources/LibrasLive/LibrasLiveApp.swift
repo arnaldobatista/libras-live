@@ -95,7 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// Atalhos ⌘1…⌘6 para as telas (botões fixos: listas dinâmicas no menu fazem o SwiftUI reconstruí-lo sem parar).
+/// Atalhos ⌘1…⌘7 para as telas (botões fixos: listas dinâmicas no menu fazem o SwiftUI reconstruí-lo sem parar).
 private struct SectionCommands: View {
     let navigation: NavigationModel
 
@@ -105,7 +105,8 @@ private struct SectionCommands: View {
         Button(AppSection.avatar.title) { navigation.section = .avatar }.keyboardShortcut("3")
         Button(AppSection.obs.title) { navigation.section = .obs }.keyboardShortcut("4")
         Button(AppSection.translation.title) { navigation.section = .translation }.keyboardShortcut("5")
-        Button(AppSection.logs.title) { navigation.section = .logs }.keyboardShortcut("6")
+        Button(AppSection.ai.title) { navigation.section = .ai }.keyboardShortcut("6")
+        Button(AppSection.logs.title) { navigation.section = .logs }.keyboardShortcut("7")
     }
 }
 

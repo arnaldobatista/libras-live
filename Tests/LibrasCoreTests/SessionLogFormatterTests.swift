@@ -72,4 +72,21 @@ import Testing
         #expect(parsed[1].time - parsed[0].time == 0.5)
         #expect(parsed[0].tokens == ["TUA", "PALAVRA"])
     }
+
+    @Test func summarizesRewrites() {
+        let jsonl = [
+            #"{"ev":"rewrite","t":"2026-09-15T10:00:00.000Z","status":"rewritten","mode":"faithful","seconds":1.2,"waited":2.0,"original":"cada eta.","text":"cada etapa."}"#,
+            #"{"ev":"rewrite","t":"2026-09-15T10:00:02.000Z","status":"fallback","reason":"passou do tempo máximo","mode":"faithful","seconds":2.5,"waited":1.0,"original":"Bom dia."}"#,
+            #"{"ev":"rewrite","t":"2026-09-15T10:00:04.000Z","status":"unchanged","mode":"faithful","seconds":0.8,"waited":3.0,"original":"Oi.","text":"Oi."}"#,
+        ].joined(separator: "\n")
+        let summary = SessionLogFormatter.summarize(SessionLogFormatter.parse(jsonl))
+        #expect(summary.rewrites == 3)
+        #expect(summary.rewritesChanged == 1)
+        #expect(summary.rewriteFallbacks == ["passou do tempo máximo": 1])
+        #expect(summary.rewriteWaits == [2.0, 1.0, 3.0])
+        let text = SessionLogFormatter.format(jsonl)
+        #expect(text.contains("IA (reescrita): 3 trechos · 1.7 palavras por trecho · mudou 1"))
+        #expect(text.contains("mudou · cada eta.  → cada etapa."))
+        #expect(text.contains("original: passou do tempo máximo · Bom dia."))
+    }
 }

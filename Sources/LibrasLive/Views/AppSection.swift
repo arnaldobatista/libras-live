@@ -40,7 +40,7 @@ final class NavigationModel {
 
 /// Telas da barra lateral.
 enum AppSection: String, CaseIterable, Identifiable, Hashable {
-    case live, audio, avatar, obs, translation, logs
+    case live, audio, avatar, obs, translation, ai, logs
 
     var id: String { rawValue }
 
@@ -51,6 +51,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .avatar: "Avatar"
         case .obs: "OBS"
         case .translation: "Tradução"
+        case .ai: "IA local"
         case .logs: "Logs"
         }
     }
@@ -62,10 +63,11 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .avatar: "person.crop.square"
         case .obs: "rectangle.on.rectangle"
         case .translation: "character.bubble"
+        case .ai: "sparkles"
         case .logs: "doc.text.magnifyingglass"
         }
     }
 
     static let broadcast: [AppSection] = [.live, .audio, .avatar, .obs]
-    static let tuning: [AppSection] = [.translation, .logs]
+    static let tuning: [AppSection] = [.translation, .ai, .logs]
 }

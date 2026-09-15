@@ -7,3 +7,6 @@ xcuserdata/
 
 # Baixado por Scripts/fetch-vlibras.sh
 /Overlay/vlibras/
+
+# Baixado por Scripts/fetch-ollama.sh
+/Vendor/

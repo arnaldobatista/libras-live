@@ -26,6 +26,15 @@ public enum SessionLogFormatter {
         public var dispatchSizes: [Int] = []
         /// Tempo até a frase ficar pronta (tradução + dicionário), em ms.
         public var readyTimes: [Double] = []
+        /// Reescrita com IA: trechos enviados, quantos mudaram, motivos de ficar o original e tempos.
+        public var rewrites = 0
+        public var rewritesChanged = 0
+        public var rewriteFallbacks: [String: Int] = [:]
+        public var rewriteSeconds: [Double] = []
+        /// Espera pelo fim da frase antes de a IA começar.
+        public var rewriteWaits: [Double] = []
+        /// Palavras em cada trecho enviado à IA.
+        public var rewriteWords: [Int] = []
 
         public var dropRate: Double {
             let total = dispatched + dropped
@@ -93,6 +102,20 @@ public enum SessionLogFormatter {
                 summary.dropped += 1
             case "sign.missing":
                 if let name = event["name"] as? String { summary.missingSigns[name, default: 0] += 1 }
+            case "rewrite":
+                summary.rewrites += 1
+                switch event["status"] as? String {
+                case "rewritten": summary.rewritesChanged += 1
+                case "fallback": summary.rewriteFallbacks[event["reason"] as? String ?? "?", default: 0] += 1
+                default: break
+                }
+                if let seconds = event["seconds"] as? Double, event["status"] as? String != "fallback" || seconds > 0 {
+                    summary.rewriteSeconds.append(seconds)
+                }
+                if let waited = event["waited"] as? Double { summary.rewriteWaits.append(waited) }
+                if let original = event["original"] as? String {
+                    summary.rewriteWords.append(event["words"] as? Int ?? original.split(separator: " ").count)
+                }
             default:
                 break
             }
@@ -130,6 +153,16 @@ public enum SessionLogFormatter {
         }
         if !summary.readyTimes.isEmpty {
             lines.append(String(format: "  Frase pronta (tradução + dicionário): média %.0f ms · máximo %.0f ms", average(summary.readyTimes), summary.readyTimes.max() ?? 0))
+        }
+        if summary.rewrites > 0 {
+            var line = String(format: "  IA (reescrita): %d trechos · %.1f palavras por trecho · mudou %d (%@) · tempo médio %.2f s · espera pelo fim da frase %.1f s",
+                              summary.rewrites, average(summary.rewriteWords.map(Double.init)), summary.rewritesChanged,
+                              percent(Double(summary.rewritesChanged) / Double(summary.rewrites)),
+                              average(summary.rewriteSeconds), average(summary.rewriteWaits))
+            if !summary.rewriteFallbacks.isEmpty {
+                line += " · ficou o original: " + summary.rewriteFallbacks.sorted { $0.value > $1.value }.map { "\($0.key) \($0.value)" }.joined(separator: ", ")
+            }
+            lines.append(line)
         }
         let active = summary.playingSeconds + summary.idleSeconds
         if active > 0 {
@@ -203,6 +236,11 @@ public enum SessionLogFormatter {
             return "\(time)  AVISO     \(str("message"))"
         case "settings":
             return "\(time)  AJUSTES   \(str("settings"))"
+        case "rewrite":
+            let status = str("status")
+            let label = status == "rewritten" ? "mudou" : (status == "unchanged" ? "igual" : "original: \(str("reason"))")
+            let text = status == "rewritten" ? "  → \(str("text"))" : (event["rejected"] as? String).map { "  ✗ \($0)" } ?? ""
+            return "\(time)  IA        \(str("mode")) · \(num("seconds", "%.2f")) s · \(label) · \(str("original"))\(text)"
         default:
             return nil
         }

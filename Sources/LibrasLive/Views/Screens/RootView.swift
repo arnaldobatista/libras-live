@@ -72,6 +72,7 @@ struct RootView: View {
         case .avatar: AvatarScreen()
         case .obs: OBSScreen()
         case .translation: TranslationScreen()
+        case .ai: AIScreen()
         case .logs: LogsScreen()
         }
     }
@@ -167,6 +168,8 @@ private struct Sidebar: View {
             Text(Image(systemName: "exclamationmark.triangle.fill")).foregroundColor(.orange)
         case .obs where model.overlayReady > model.overlayHidden:
             Text(Image(systemName: "checkmark.circle.fill")).foregroundColor(.green)
+        case .ai where model.settings.rewrite.enabled:
+            model.rewritePending > 0 ? Text("\(model.rewritePending)") : Text("ligada")
         default:
             nil
         }

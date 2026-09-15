@@ -5,8 +5,8 @@ App nativo para macOS que ouve um canal de áudio da transmissão, transcreve a 
 > Tradução automática tem limites e **não substitui intérprete de Libras**. Vale avisar isso na transmissão.
 
 ```
-Canal de áudio ─► Fala→texto ─► Frases estáveis ─► Glosa (VLibras) ─► Fila ─► Overlay no OBS
- (Core Audio)     (SpeechAnalyzer)  (commit cedo)     (+ cache)       (atraso)   (avatar Unity)
+Canal de áudio ─► Fala→texto ─► Frases estáveis ─► [Reescrita com IA local] ─► Glosa (VLibras) ─► Fila ─► Overlay no OBS
+ (Core Audio)     (SpeechAnalyzer)  (commit cedo)       (Ollama, opcional)        (+ cache)       (atraso)   (avatar Unity)
 ```
 
 ## Requisitos
@@ -14,6 +14,7 @@ Canal de áudio ─► Fala→texto ─► Frases estáveis ─► Glosa (VLibra
 - macOS 26 ou superior, Apple Silicon
 - Xcode 26 (Swift 6.2+), só para compilar
 - Internet: a glosa vem da API pública do VLibras e os sinais animados vêm do dicionário do VLibras (com cache local)
+- Para a reescrita com IA: espaço para um modelo (2,5 GB no recomendado) e, de preferência, 16 GB de memória
 - Node 22+ e Google Chrome, só para o teste de ponta a ponta
 
 ## Começando
@@ -35,9 +36,10 @@ A janela segue o padrão do macOS 26 (Liquid Glass): barra lateral com as telas,
 | **Avatar** | Personagem, legenda do próprio avatar, cores e logo, com prévia ao vivo. |
 | **OBS** | URL para copiar, passo a passo, overlays conectados, fundo para chroma key, painel de diagnóstico e porta. |
 | **Tradução** | Velocidade, fila (juntar frases, descartes), glosa, reconhecimento de fala e dicionário. |
+| **IA local** | Liga a reescrita das frases com IA, escolhe o modo e o modelo, testa uma frase nos três modos, mostra os modelos recomendados para o seu Mac e gerencia os modelos (baixar, buscar, carregar, excluir). |
 | **Logs** | Sessão atual com resumo, salvar, sessões anteriores e apagar. |
 
-Atalhos: **⌘L** começar/parar de ouvir, **⌘K** limpar fila, **⌘T** testar uma frase, **⌥⌘C** copiar a URL do overlay, **⇧⌘S** salvar o log, **⌘1…⌘6** trocar de tela e **⌘,** ajustes (prévia do avatar, ícone na barra de menus, logs e boas-vindas). O ícone na barra de menus também começa/para e mostra atraso e fila.
+Atalhos: **⌘L** começar/parar de ouvir, **⌘K** limpar fila, **⌘T** testar uma frase, **⌥⌘C** copiar a URL do overlay, **⇧⌘S** salvar o log, **⌘1…⌘7** trocar de tela e **⌘,** ajustes (prévia do avatar, ícone na barra de menus, logs e boas-vindas). O ícone na barra de menus também começa/para e mostra atraso e fila.
 
 Ajuste o **ganho** até o medidor ficar entre -30 e -10 dB quando alguém fala.
 
@@ -64,6 +66,45 @@ curl -X POST http://127.0.0.1:8765/api/appearance -H 'Content-Type: application/
 Os campos são opcionais: `enabled`, `shirt`, `pants`, `skin`, `hair`, `eyebrows`, `iris`, `eyes`, `logoMode` (`vlibras`, `custom`, `none`), `logoPosition` (`chest`, `center`, `centerAndChest`), `logoScale` (0,3–1), `logoOffsetX` e `logoOffsetY` (-1 a 1).
 
 > A [personalização oficial do VLibras](https://vlibras.gov.br/doc/widget/functionalities/customize-avatar.html) é exclusiva de instituições parceiras (pedido pelo cgpsp@economia.gov.br). Aqui ela roda localmente: as cores entram pelo método `ApplyJSON` do próprio player (LGPL) e a logo é servida pelo app. Confirme com a equipe do VLibras antes de usar uma logo em transmissão pública.
+
+### Reescrita com IA local
+
+Opcional, desligada por padrão. Um modelo de linguagem rodando no próprio Mac revisa cada frase antes da tradução para Libras, para ela chegar ao avatar mais clara. Nada sai do Mac: o [Ollama](https://ollama.com) vem dentro do app, numa porta própria, com os modelos em `~/Library/Application Support/LibrasLive/ollama/`.
+
+Três modos:
+
+| Modo | O que faz | Exemplo (fala reconhecida → enviado ao tradutor) |
+|---|---|---|
+| **Fiel** | Corrige erros de transcrição, pontuação e concordância e completa lacunas óbvias. Mantém as palavras e a ordem. | "detalhes de cada eta" → "detalhes de cada etapa" |
+| **Intermediário** | Também tira repetições, hesitações e muletas. Mantém o sentido. | "é uma palavra é uma parábola que reflete…" → "é uma palavra, é uma parábola que reflete…" |
+| **Nova versão** | Reescreve em frases curtas e diretas, fáceis de sinalizar. | "passaremos muito mais tempo explicando e interpretando…" → "Vamos passar mais tempo explicando, interpretando e detalhando cada etapa." |
+
+Como funciona na transmissão:
+
+- O reconhecedor confirma a fala em pedaços de ~6 palavras (um a cada 3 ou 4 s na fala corrida). Revisar cada pedaço sozinho quase não muda nada, então a IA recebe trechos maiores. Em **O que vai para a IA** você escolhe:
+  - **Até o ponto final** (padrão): a frase vai inteira quando o reconhecedor põe o ponto; frases com menos de 6 palavras juntam com a seguinte. Sem ponto, corta numa vírgula perto do **máximo de palavras** (30, podendo passar um pouco).
+  - **Por palavras**: junta N palavras e espera um ponto final por mais algumas (**pode passar até**); sem ponto, corta na última vírgula dentro do limite.
+  - **Pausa na fala** (2 s): silêncio no áudio com o texto parado fecha o trecho antes.
+  - Numa sessão real, trechos de pedaço em pedaço tinham 6,8 palavras; até o ponto final ficam com ~22. O custo é a espera: a IA só recebe a frase quando ela termina (uns 9 a 10 s depois do começo, na fala corrida). A tela mostra a espera estimada e o trecho que está juntando.
+- As duas frases anteriores vão junto como contexto (dá para desligar).
+- Cada trecho tem um **tempo máximo** (3 s por padrão, para até 20 palavras; trechos maiores ganham proporcionalmente, até o dobro). Se passar, se a IA estiver atrasada ou se a resposta parecer inventada (palavras demais, de menos ou sentido diferente), vai o texto original. A tradução nunca fica esperando a IA.
+- O histórico marca as frases com **IA · fiel**, **IA · ok** (mesmas palavras) ou **original** (com o motivo), mostra o que foi falado e o inspetor traz os detalhes.
+- O log registra cada reescrita e o resumo do `.txt` traz quantas mudaram, o tempo médio e por que ficou o original.
+
+Modelos recomendados para o MacBook Pro M1 Pro 16 GB (medidos reescrevendo frases reais das lives):
+
+| Modelo | Download | Memória | Por frase | Resultado |
+|---|---|---|---|---|
+| `qwen3:4b-instruct-2507-q4_K_M` (recomendado) | 2,5 GB | 2,9 GB | ~1 s | Português natural, corrige sem inventar |
+| `gemma4:e2b-it-qat` | 4,3 GB | 3,6 GB | ~0,8 s | Mais rápido; ótima nova versão, mas no modo fiel às vezes corta palavras |
+| `qwen3.5:4b` | 3,4 GB | 3,1 GB | ~1,6 s | Corrige mais erros do reconhecedor, mais lento |
+
+- Com o avatar sinalizando ao mesmo tempo, os tempos sobem cerca de 50%.
+- Modelos de 1 B ou menos (`qwen3.5:0.8b`) erram e inventam. O `granite4.2:3b` é rápido, mas quase não mexe no texto. Os de 8 B ou mais passam de 3 s por frase.
+- O motor desliga o raciocínio ("thinking") dos modelos que pensam; com ele ligado a resposta demora e às vezes nem chega.
+- Depois de instalar uma versão nova, a primeira subida do motor pode levar uns 30 s: o macOS confere os executáveis do Ollama, que vêm assinados só localmente. Depois sobe em menos de 1 s, e carregar o modelo na memória leva de 2 a 9 s (o app faz isso ao ligar a reescrita).
+
+Na tela **IA local** dá para buscar outros modelos em ollama.com, baixar qualquer versão pelo nome, tirar da memória e excluir. Versões `-mlx` e `nvfp4` não rodam no motor embutido. O motor fecha junto com o app, até se o app travar.
 
 ### Logs da live
 
@@ -115,9 +156,10 @@ Você pode ter mais de um overlay aberto (duas cenas, um monitor no navegador). 
 | Overlays | `LibrasCore/OverlayRoster` | Controla quem está pronto ou visível e quem ainda precisa terminar a glosa atual. |
 | Servidor | `Sources/OverlayServer` | Hummingbird 2 em `127.0.0.1`: página, WebSocket, cache dos sinais em disco (com downloads deduplicados e pré-carregamento) e API. |
 | Overlay | `Overlay/` | Player Unity WebGL do VLibras sem o widget, controlado por `overlay.js`. Detecta fim da reprodução por evento de estado e pelo contador de sinais, com vigia de 30 s. Aplica a aparência com `CustomizationBridge.ApplyJSON` e recarrega quando é preciso voltar ao original. Só mostra o canvas com o avatar pronto (esconde a tela branca de abertura do Unity). Na prévia do app, limpa o canvas com preto transparente para o WebKit não desenhar um contorno branco no avatar. |
+| Reescrita | `LibrasCore/PhraseRewrite`, `LocalAI` | `RewriteBuffer` junta os trechos em frases, `RewritePrompt` monta as instruções de cada modo e `RewriteValidator` recusa respostas fora do formato, longas ou curtas demais ou que perderam as palavras do original. `OllamaEngine` sobe o `ollama serve` embutido sob um vigia em `sh` (fecha junto com o app), `OllamaClient` fala com a API, `PhraseRewriter` aplica o prazo e `OllamaLibrary` lê a busca de ollama.com. As frases passam pela IA uma de cada vez, na ordem da fala. |
 | Aparência | `LibrasCore/AvatarAppearance`, `LogoRenderer` | Gera o JSON do player (`cabelo`, `calca`, `camisa`, `corpo`, `iris`, `olhos`, `sombrancelhas`, `logo`, `pos`; formato lido dos metadados do build) e renderiza a logo no quadro de 500 × 500. |
 
-Dados locais ficam em `~/Library/Application Support/LibrasLive/`: `gloss-cache.json`, `signs/`, `logs/` e `appearance/` (logo original, logo pronta e imagem transparente).
+Dados locais ficam em `~/Library/Application Support/LibrasLive/`: `gloss-cache.json`, `signs/`, `logs/`, `appearance/` (logo original, logo pronta e imagem transparente) e `ollama/` (modelos, log do motor e chave do Ollama).
 
 ### Protocolo do WebSocket (`/ws`)
 
@@ -170,7 +212,7 @@ make e2e
 make burst
 ```
 
-- `make test` roda os testes unitários: segmentação, fila, frases estáveis, overlays, protocolo, cache e política de origem.
+- `make test` roda os testes unitários: segmentação, fila, frases estáveis, reescrita (prompt, validação, agrupamento), leitura da busca do Ollama, overlays, protocolo, cache e política de origem.
 - `make e2e` precisa do app aberto. Ele abre o overlay no Chrome headless, envia frases e mede o tempo até tocar e terminar.
 - `make burst` manda 6 frases de uma vez para validar a aceleração e o descarte.
 
@@ -197,6 +239,14 @@ LIBRAS_PORT=8799 LIBRAS_SUPPORT_DIR=/tmp/libras-teste .build/debug/LibrasLive
 
 ```bash
 node Scripts/e2e-overlay.mjs --port 8799 --burst
+```
+
+O motor de IA vem de `Scripts/fetch-ollama.sh` (`make ollama`): baixa o Ollama numa versão fixada, confere o SHA-256 e guarda em `Vendor/ollama` só o `ollama` e o `llama-server` de Apple Silicon (46 MB em vez de 500 MB). O `build-app.sh` copia para `Contents/Resources/ollama`.
+
+Testar a reescrita sem abrir o app (usa o motor de `Vendor/` e os modelos do app):
+
+```bash
+swift run libras-probe rewrite "passaremos muito mais tempo explicando e interpretando os detalhes de cada eta."
 ```
 
 Diagnóstico por linha de comando (`libras-probe`):
@@ -231,7 +281,7 @@ swift run libras-probe log sessao.jsonl
 
 Os canais são numerados a partir de 1. Para gerar um áudio de teste: `say -v Luciana -o fala.aiff "Boa noite pessoal."`.
 
-Variáveis para abrir o app direto num estado (capturas de tela e testes de interface): `LIBRAS_SECTION` (`live`, `audio`, `avatar`, `obs`, `translation`, `logs`), `LIBRAS_ONBOARDING=1` com `LIBRAS_ONBOARDING_STEP` (1 a 4), `LIBRAS_OPEN_SETTINGS=1`, `LIBRAS_WINDOW_SIZE=1040x800` (tamanho da janela), `LIBRAS_SECTION_TOUR="audio:3,live:3"` (troca de tela sozinha) e `LIBRAS_BACKGROUND=1` (abre sem roubar o foco).
+Variáveis para abrir o app direto num estado (capturas de tela e testes de interface): `LIBRAS_SECTION` (`live`, `audio`, `avatar`, `obs`, `translation`, `logs`), `LIBRAS_ONBOARDING=1` com `LIBRAS_ONBOARDING_STEP` (1 a 4), `LIBRAS_OPEN_SETTINGS=1`, `LIBRAS_WINDOW_SIZE=1040x800` (tamanho da janela), `LIBRAS_SECTION_TOUR="audio:3,live:3"` (troca de tela sozinha), `LIBRAS_BACKGROUND=1` (abre sem roubar o foco), `LIBRAS_AI_TEST=1`, `LIBRAS_AI_SEARCH=1` e `LIBRAS_AI_PULL=<modelo>` (tela IA local). `LIBRAS_OLLAMA_DIR` aponta para outra pasta de modelos e `LIBRAS_OLLAMA_BIN` para outro executável do Ollama.
 
 Ícone e miniaturas:
 
@@ -290,9 +340,12 @@ Simulação da pregação da live de 14/09 (43 frases em ~3 min, velocidade 2–
 - **Dependência do VLibras:** tradução e dicionário vêm dos servidores públicos. O cache reduz o impacto de uma queda, mas frases e sinais nunca vistos precisam de internet.
 - **Página oculta:** o avatar só roda em fonte visível (OBS ou aba em primeiro plano). A prévia dentro do app pausa enquanto não aparece (outra tela aberta ou janela coberta) e volta na hora; o OBS não é afetado.
 - **Uma voz por vez:** o reconhecedor não separa falantes. Some só os canais de quem fala.
+- **Reescrita com IA:** a frase chega ao avatar depois de terminar de ser falada (espera pelo ponto final ou pelas palavras escolhidas) mais 1 a 2 s de resposta. Com a fila muito atrasada, as frases passam direto para não aumentar o atraso. A IA pode interpretar errado uma frase ambígua; o modo **Fiel** é o mais seguro.
 
 ## Licenças
 
 - Código deste projeto: defina a licença antes de publicar.
 - Player VLibras (`Overlay/vlibras/`, baixado por `Scripts/fetch-vlibras.sh`): LGPL-3.0, © LAVID/UFPB. A licença acompanha os arquivos.
 - A API de tradução e o dicionário são serviços públicos do VLibras.
+- Ollama (`Vendor/ollama/`, baixado por `Scripts/fetch-ollama.sh`, e dentro do app): MIT, com as licenças das dependências (llama.cpp, MLX e outras) na mesma pasta.
+- Cada modelo tem a própria licença (ex.: Qwen: Apache 2.0; Gemma: termos de uso do Gemma). Confira em ollama.com antes de usar.

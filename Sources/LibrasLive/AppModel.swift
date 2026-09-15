@@ -3,6 +3,7 @@ import AudioCapture
 import AVFoundation
 import Foundation
 import LibrasCore
+import LocalAI
 import Observation
 import os
 import OverlayServer
@@ -29,6 +30,22 @@ struct FeedEntry: Identifiable, Equatable {
     var dropReason: String?
     var removed: [String] = []
     var replaced: [String] = []
+    /// A frase passou pela IA antes da tradução.
+    var rewrite: RewriteInfo?
+}
+
+/// O que a IA fez com a frase (a unidade inteira; ela pode ter virado mais de uma linha).
+struct RewriteInfo: Equatable {
+    let original: String
+    let result: String
+    let status: PhraseRewriter.Result.Status
+    let reason: String?
+    /// Tempo da IA.
+    let seconds: Double
+    /// Espera pelo fim da frase antes de a IA começar.
+    let waited: Double
+    let model: String
+    let mode: RewriteMode
 }
 
 /// Estado do app e orquestração: captura → fala → trechos → glosa → dicionário → fila → overlay.
@@ -84,6 +101,13 @@ final class AppModel {
     let sessionLog = SessionLog()
     private(set) var logEventCount = 0
 
+    /// IA local (motor, modelos e reescrita).
+    let localAI = LocalAIController()
+    /// Frases esperando ou passando pela IA agora.
+    private(set) var rewritePending = 0
+    /// Fala juntando para o próximo trecho da IA (mostrado na tela IA local).
+    private(set) var rewriteGathering = ""
+
     var selectedDevice: AudioDevice? {
         devices.first { $0.uid == settings.deviceUID }
     }
@@ -126,6 +150,20 @@ final class AppModel {
     private let outbox: AsyncStream<OverlayOutbound>.Continuation
     private var outboxTask: Task<Void, Never>?
 
+    // Reescrita: os trechos viram frases no buffer e passam pela IA um de cada vez, na ordem da fala.
+    private struct RewriteJob {
+        let text: String
+        let startedAt: Date
+        let queuedAt: Date
+        let generation: Int
+    }
+
+    private var rewriteBuffer: RewriteBuffer
+    private let rewriteJobs: AsyncStream<RewriteJob>.Continuation
+    private var rewriteTask: Task<Void, Never>?
+    private var rewriteGeneration = 0
+    private var recentUnits: [String] = []
+
     /// Repassa buffers da thread de áudio para o motor atual sem tocar no MainActor.
     private let engineSink = OSAllocatedUnfairLock<AppleSpeechEngine?>(initialState: nil)
 
@@ -140,13 +178,22 @@ final class AppModel {
             pauseRule: PauseCommitRule(silenceSeconds: settings.pauseCommitSeconds)
         )
         sessionLog.isEnabled = settings.logEnabled
+        rewriteBuffer = RewriteBuffer(grouping: settings.rewrite.grouping)
 
         let (stream, continuation) = AsyncStream<OverlayOutbound>.makeStream(bufferingPolicy: .bufferingNewest(256))
         outbox = continuation
+        let (jobs, jobsContinuation) = AsyncStream<RewriteJob>.makeStream()
+        rewriteJobs = jobsContinuation
+
         outboxTask = Task { [weak self] in
             for await message in stream {
                 guard let server = self?.server else { continue }
                 await server.send(message)
+            }
+        }
+        rewriteTask = Task { [weak self] in
+            for await job in jobs {
+                await self?.process(job)
             }
         }
     }
@@ -192,6 +239,14 @@ final class AppModel {
             await glossService.load()
             glossCacheCount = await glossService.count
         }
+        localAI.onEvent = { [weak self] event, fields in self?.record(event, fields) }
+        localAI.onModelInstalled = { [weak self] name in
+            guard let self, settings.rewrite.model == nil else { return }
+            settings.rewrite.model = name
+        }
+        if settings.rewrite.enabled, let model = settings.rewrite.model {
+            Task { await localAI.warmUp(model) }
+        }
         Task {
             await SessionLog.pruneIdleSessions(keeping: sessionLog.fileURL)
             refreshLogs()
@@ -211,6 +266,7 @@ final class AppModel {
         capture?.stop()
         await glossService.save()
         await server?.stop()
+        await localAI.shutdown()
     }
 
     // MARK: Servidor
@@ -536,6 +592,7 @@ final class AppModel {
 
         // O que ainda estava provisório também vai para a fila.
         submit(speech.stop())
+        if let unit = rewriteBuffer.flush() { queueRewrite(unit) }
         partialText = ""
         voiceDetected = false
         updateCapture()
@@ -588,13 +645,106 @@ final class AppModel {
 
     // MARK: Fila
 
+    /// Reescrita ligada e com modelo instalado.
+    private var rewriteActive: Bool {
+        guard settings.rewrite.enabled, let model = settings.rewrite.model else { return false }
+        return localAI.isInstalled(model) || localAI.installed.isEmpty
+    }
+
     /// Texto (do reconhecedor, digitado ou da API) entra na fila já quebrado em trechos.
+    /// Com a IA ligada, os trechos viram frases e passam pela reescrita antes.
     func submitFinal(_ text: String, source: String = "digitado", extra: [String: Any] = [:]) {
         record("commit", extra.merging(["text": text, "source": source]) { _, new in new })
 
+        guard rewriteActive else {
+            enqueueForSigning(text, rewrite: nil)
+            return
+        }
+        let now = Date()
+        if source == "digitado" || source == "api" {
+            if let pending = rewriteBuffer.flush() { queueRewrite(pending) }
+            queueRewrite(RewriteBuffer.Unit(text: text, startedAt: now, sources: [source]))
+        } else {
+            for unit in rewriteBuffer.append(text, source: source, at: now) {
+                queueRewrite(unit)
+            }
+        }
+    }
+
+    private func queueRewrite(_ unit: RewriteBuffer.Unit) {
+        guard unit.text.contains(where: { $0.isLetter || $0.isNumber }) else { return }
+        rewritePending += 1
+        rewriteJobs.yield(RewriteJob(text: unit.text, startedAt: unit.startedAt, queuedAt: Date(), generation: rewriteGeneration))
+    }
+
+    private func process(_ job: RewriteJob) async {
+        defer { rewritePending = max(0, rewritePending - 1) }
+        guard job.generation == rewriteGeneration else {
+            record("drop", ["text": job.text, "reason": "fila limpa", "age": Date().timeIntervalSince(job.startedAt)])
+            return
+        }
+        let config = settings.rewrite
+        guard let model = config.model else {
+            enqueueForSigning(job.text, rewrite: nil)
+            return
+        }
+
+        let waitedInQueue = Date().timeIntervalSince(job.queuedAt)
+        let words = job.text.split(whereSeparator: \.isWhitespace).count
+        let deadline = config.deadline(forWords: words)
+        let result: PhraseRewriter.Result
+        if !config.enabled {
+            result = .skipped(job.text, reason: "IA desligada", model: model, mode: config.mode)
+        } else if waitedInQueue > deadline {
+            // A IA não está dando conta do ritmo: esta vai direto, para não aumentar o atraso.
+            result = .skipped(job.text, reason: "fila da IA atrasada", model: model, mode: config.mode)
+        } else {
+            let context = config.useContext ? Array(recentUnits.suffix(2)) : []
+            result = await localAI.rewrite(job.text, mode: config.mode, context: context, model: model, timeout: deadline)
+        }
+        guard job.generation == rewriteGeneration else {
+            record("drop", ["text": job.text, "reason": "fila limpa", "age": Date().timeIntervalSince(job.startedAt)])
+            return
+        }
+
+        recentUnits.append(result.text)
+        if recentUnits.count > 4 { recentUnits.removeFirst(recentUnits.count - 4) }
+
+        let waited = job.queuedAt.timeIntervalSince(job.startedAt)
+        var fields: [String: Any] = [
+            "original": result.original,
+            "text": result.text,
+            "status": result.status.rawValue,
+            "mode": result.mode.rawValue,
+            "model": result.model,
+            "seconds": (result.seconds * 1000).rounded() / 1000,
+            "waited": (waited * 100).rounded() / 100,
+            "queue": (waitedInQueue * 100).rounded() / 100,
+            "words": words,
+        ]
+        if let reason = result.reason { fields["reason"] = reason }
+        if let rejected = result.rejectedOutput { fields["rejected"] = rejected }
+        record("rewrite", fields)
+
+        enqueueForSigning(result.text, rewrite: RewriteInfo(
+            original: result.original,
+            result: result.text,
+            status: result.status,
+            reason: result.reason,
+            seconds: result.seconds,
+            waited: waited,
+            model: result.model,
+            mode: result.mode
+        ))
+    }
+
+    /// Quebra em trechos, põe na fila e traduz cada um.
+    private func enqueueForSigning(_ text: String, rewrite: RewriteInfo?) {
         for segment in segmenter.split(text) {
             let item = scheduler.enqueue(text: segment)
-            appendFeed(FeedEntry(id: item.id, date: item.createdAt, text: segment, status: .translating))
+            var entry = FeedEntry(id: item.id, date: item.createdAt, text: segment, status: .translating)
+            entry.rewrite = rewrite
+            appendFeed(entry)
             record("enqueue", ["id": item.id, "text": segment])
 
             Task {
@@ -664,6 +814,8 @@ final class AppModel {
     }
 
     func clearQueue() {
+        rewriteGeneration += 1
+        rewriteBuffer.reset()
         for item in scheduler.queue { updateFeed(item.id) { $0.status = .dropped; $0.dropReason = "fila limpa" } }
         if let batch = scheduler.playing {
             for itemID in batch.itemIDs { updateFeed(itemID) { $0.status = .played } }
@@ -730,6 +882,17 @@ final class AppModel {
             roster.cancelPlayback()
             for itemID in expired.itemIDs { updateFeed(itemID) { $0.status = .played } }
             record("ended", ["id": expired.id, "reason": "prazo esgotado", "duration": now.timeIntervalSince(expired.startedAt)])
+        }
+        if rewriteActive {
+            // Pausa real: silêncio no detector de voz e hipótese do reconhecedor parada (se o detector não
+            // pegar a voz do canal, a hipótese sozinha decide). Sem escuta, conta desde o último pedaço.
+            let vadSilence = speech.vad.lastSpeechAt.map { now.timeIntervalSince($0) } ?? .infinity
+            let unchanged = speech.hypothesisChangedAt.map { now.timeIntervalSince($0) } ?? .infinity
+            let silence: TimeInterval? = isListening ? min(vadSilence, unchanged) : nil
+            if let unit = rewriteBuffer.tick(at: now, silence: silence) {
+                queueRewrite(unit)
+            }
+            if rewriteBuffer.pendingText != rewriteGathering { rewriteGathering = rewriteBuffer.pendingText }
         }
         if isListening {
             submit(speech.tick(at: now))
@@ -1094,6 +1257,9 @@ final class AppModel {
         if settings.appearance != old.appearance {
             scheduleAppearanceUpdate(from: old.appearance)
         }
+        if settings.rewrite != old.rewrite {
+            rewriteSettingsChanged(from: old.rewrite)
+        }
         if settings.avatar != old.avatar || settings.subtitles != old.subtitles
             || settings.useSignCache != old.useSignCache || settings.policy.baseSpeed != old.policy.baseSpeed {
             appearanceReload = false
@@ -1108,6 +1274,22 @@ final class AppModel {
         if settings.logSummary != old.logSummary, now.timeIntervalSince(lastSettingsLogged) > 2 {
             lastSettingsLogged = now
             record("settings", ["settings": settings.logSummary])
+        }
+    }
+
+    private func rewriteSettingsChanged(from old: RewriteSettings) {
+        let now = settings.rewrite
+        if now.grouping != old.grouping {
+            rewriteBuffer.grouping = now.grouping
+        }
+        if !now.enabled, old.enabled {
+            // Desligou: o que estava juntando vai direto para a tradução e o modelo sai da memória.
+            if let unit = rewriteBuffer.flush() { enqueueForSigning(unit.text, rewrite: nil) }
+            if let model = old.model { Task { await localAI.unload(model) } }
+        }
+        if now.enabled, let model = now.model, !old.enabled || model != old.model {
+            if let previous = old.model, previous != model, old.enabled { Task { await localAI.unload(previous) } }
+            Task { await localAI.warmUp(model) }
         }
     }
 
@@ -1131,6 +1313,14 @@ final class AppModel {
             let signs: SignCache.Stats
             let logFile: String
             let logEvents: Int
+            let rewrite: RewriteStatus
+        }
+        struct RewriteStatus: Encodable {
+            let enabled: Bool
+            let mode: String
+            let model: String?
+            let engine: String
+            let pending: Int
         }
         let status = Status(
             listening: isListening,
@@ -1150,7 +1340,21 @@ final class AppModel {
             glossCache: glossCacheCount,
             signs: signStats,
             logFile: sessionLog.fileURL.path,
-            logEvents: logEventCount
+            logEvents: logEventCount,
+            rewrite: RewriteStatus(
+                enabled: settings.rewrite.enabled,
+                mode: settings.rewrite.mode.rawValue,
+                model: settings.rewrite.model,
+                engine: {
+                    switch localAI.engineStatus {
+                    case .stopped: "parado"
+                    case .starting: "iniciando"
+                    case let .running(version, port): "pronto \(version) na porta \(port)"
+                    case let .failed(message): "falhou: \(message)"
+                    }
+                }(),
+                pending: rewritePending
+            )
         )
         return (try? JSONEncoder().encode(status)) ?? Data("{}".utf8)
     }
