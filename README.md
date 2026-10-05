@@ -1,188 +1,205 @@
 # Libras Live
 
-App nativo para macOS que ouve um canal de áudio da transmissão, transcreve a fala em português e mostra um avatar 3D sinalizando em Libras numa página que entra no OBS como **fonte de navegador**.
+[![Verificar](https://github.com/arnaldobatista/libras-live/actions/workflows/verificar.yml/badge.svg)](https://github.com/arnaldobatista/libras-live/actions/workflows/verificar.yml)
+[![Licença MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-2ea44f)](LICENSE)
+![macOS 26+](https://img.shields.io/badge/macOS-26%2B-000000?logo=apple&logoColor=white)
+![Swift](https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white)
 
-> Tradução automática tem limites e **não substitui intérprete de Libras**. Vale avisar isso na transmissão.
+App para macOS que ouve o áudio da sua transmissão, transcreve a fala em português e põe um avatar 3D **sinalizando em Libras** no OBS, ao vivo.
+
+*In English: a native macOS app that listens to a live stream's audio, transcribes Brazilian Portuguese speech on-device and shows a 3D avatar signing it in Libras (Brazilian Sign Language) as an OBS browser source, using the open-source VLibras player. The docs are in Portuguese; issues and pull requests in English are welcome.*
+
+> **A tradução automática não substitui intérprete de Libras.** Ela ajuda quando não há intérprete, mas erra, principalmente com nomes próprios e termos técnicos. Avise o público que a tradução é automática.
+
+![A tela Ao vivo: fala reconhecida, histórico com a glosa de cada frase e o avatar sinalizando](docs/images/ao-vivo.png)
+
+O avatar e a tradução para glosa vêm do [VLibras](https://vlibras.gov.br), a suíte pública de tradução para Libras. O Libras Live junta as peças que faltam para usar isso numa live: captura do canal certo da mesa de som, reconhecimento de fala no próprio Mac, uma fila que mantém o avatar acompanhando a fala e uma página com fundo transparente para o OBS.
+
+O Libras Live é um projeto independente, sem vínculo com o VLibras, o LAVID/UFPB ou o Governo Federal.
+
+## Recursos
+
+- **Qualquer entrada de áudio do Mac, por canal.** Escolha o dispositivo e os canais que têm a voz (vários canais são somados em mono). Funciona com mesas multicanal, como a Soundcraft Ui24, e mostra o nível de cada canal para achar onde está a voz.
+- **Reconhecimento de fala no próprio Mac**, com o `SpeechAnalyzer` do macOS 26. O áudio não sai do computador.
+- **Frases sem palavra cortada.** O app decide quando a fala vira frase pela pontuação, pelas palavras que já não mudam e pelo silêncio no áudio.
+- **Glosa e sinais do VLibras**, com cache local da tradução e das animações.
+- **Fila que acompanha a fala.** Junta as frases prontas num envio só, acelera o avatar quando atrasa e, se precisar, descarta primeiro as repetições e depois as frases mais antigas.
+- **Avatar no OBS com fundo transparente**, como fonte de navegador. Três personagens: Ícaro, Hosana e Guga.
+- **Cores e logo do avatar**, com prévia ao vivo.
+- **Reescrita com IA local** (opcional). Um modelo de linguagem rodando no Mac corrige a transcrição antes da tradução, em três níveis: fiel, intermediário ou nova versão. O [Ollama](https://ollama.com) vem dentro do app.
+- **Histórico e inspetor:** cada frase com a glosa, o que foi sinalizado, a velocidade e o que a IA mudou.
+- **Logs de sessão** com resumo, para entender o que aconteceu numa live.
+- **API local** para Stream Deck e automações.
+- Interface no padrão do macOS 26, que se adapta ao tamanho da janela, com atalhos de teclado e ícone na barra de menus.
+
+## Como funciona
 
 ```
-Canal de áudio ─► Fala→texto ─► Frases estáveis ─► [Reescrita com IA local] ─► Glosa (VLibras) ─► Fila ─► Overlay no OBS
- (Core Audio)     (SpeechAnalyzer)  (commit cedo)       (Ollama, opcional)        (+ cache)       (atraso)   (avatar Unity)
+ mesa de som ou microfone                     seu Mac                      serviços do VLibras
+┌────────────────────────┐   ┌──────────────────────────────────────┐   ┌──────────────────────┐
+│ canal de voz           │──►│ captura ─► fala→texto ─► frases      │   │                      │
+└────────────────────────┘   │                            │         │   │                      │
+                             │              [IA local, opcional]    │   │                      │
+                             │                            ▼         │   │                      │
+                             │                          glosa ◄─────┼───┤ tradução             │
+                             │                            ▼         │   │                      │
+                             │   servidor local ◄────── fila        │   │                      │
+                             │       ▲                              │   │                      │
+                             │       └──────────────────────────────┼───┤ dicionário de sinais │
+                             └───────┬──────────────────────────────┘   └──────────────────────┘
+                                     ▼
+                   OBS: fonte de navegador com o avatar
 ```
+
+O app roda um servidor que só atende o próprio Mac (`127.0.0.1:8765`). O OBS abre a página do avatar nesse endereço, e o app manda cada glosa por uma conexão WebSocket. Os detalhes de cada etapa estão em [docs/arquitetura.md](docs/arquitetura.md).
 
 ## Requisitos
 
-- macOS 26 ou superior, Apple Silicon
-- Xcode 26 (Swift 6.2+), só para compilar
-- Internet: a glosa vem da API pública do VLibras e os sinais animados vêm do dicionário do VLibras (com cache local)
-- Para a reescrita com IA: espaço para um modelo (2,5 GB no recomendado) e, de preferência, 16 GB de memória
-- Node 22+ e Google Chrome, só para o teste de ponta a ponta
+- Mac com Apple Silicon e macOS 26 ou mais novo
+- [OBS Studio](https://obsproject.com), ou outro programa que aceite fonte de navegador
+- Internet: a tradução para glosa e as animações dos sinais vêm do VLibras
+- Para a reescrita com IA: uns 3 GB livres para o modelo e, de preferência, 16 GB de memória
+- Para compilar: Xcode 26 ou mais novo
 
-## Começando
+## Instalação
 
-```bash
-make run
-```
+### Baixar o app pronto
 
-`make run` baixa o player do VLibras (versão fixada), compila, monta `build/Libras Live.app` e abre o app. Na primeira abertura, as boas-vindas pedem a permissão de microfone, ajudam a escolher o áudio e mostram a URL do OBS.
+Cada versão publicada traz o app em [Releases](https://github.com/arnaldobatista/libras-live/releases).
 
-### No app
+1. Baixe o `Libras-Live-<versão>.zip`, abra e arraste o **Libras Live** para **Aplicativos**.
+2. Na primeira abertura, o macOS avisa que não conseguiu verificar o app. Isso acontece porque ele não tem a assinatura paga da Apple, igual a quando você compila.
+3. Em **Ajustes do Sistema › Privacidade e Segurança**, role até o aviso do Libras Live e clique em **Abrir Mesmo Assim**.
 
-A janela segue o padrão do macOS 26 (Liquid Glass): barra lateral com as telas, barra de ferramentas com **Começar/Parar** e **Limpar fila**, e um inspetor com os detalhes da frase selecionada. As telas se reorganizam conforme a largura (a partir de 720 × 540): na tela **Ao vivo**, o avatar fica numa coluna ao lado, fica menor ao lado da fala ou sai de cena quando falta espaço.
-
-| Tela | O que tem |
-|---|---|
-| **Ao vivo** | Atraso, velocidade, fila, sinalizadas e descartadas; a fala reconhecida agora; o histórico com a glosa de cada frase; a prévia do avatar e a troca rápida de personagem. O campo embaixo testa frases sem microfone. |
-| **Áudio** | Dispositivo (ex.: *Soundcraft Ui24*), canais (clique nos números; vários canais são somados em mono), nível por canal para achar a voz, ganho e detector de voz. |
-| **Avatar** | Personagem, legenda do próprio avatar, cores e logo, com prévia ao vivo. |
-| **OBS** | URL para copiar, passo a passo, overlays conectados, fundo para chroma key, painel de diagnóstico e porta. |
-| **Tradução** | Velocidade, fila (juntar frases, descartes), glosa, reconhecimento de fala e dicionário. |
-| **IA local** | Liga a reescrita das frases com IA, escolhe o modo e o modelo, testa uma frase nos três modos, mostra os modelos recomendados para o seu Mac e gerencia os modelos (baixar, buscar, carregar, excluir). |
-| **Logs** | Sessão atual com resumo, salvar, sessões anteriores e apagar. |
-
-Atalhos: **⌘L** começar/parar de ouvir, **⌘K** limpar fila, **⌘T** testar uma frase, **⌥⌘C** copiar a URL do overlay, **⇧⌘S** salvar o log, **⌘1…⌘7** trocar de tela e **⌘,** ajustes (prévia do avatar, ícone na barra de menus, logs e boas-vindas). O ícone na barra de menus também começa/para e mostra atraso e fila.
-
-Ajuste o **ganho** até o medidor ficar entre -30 e -10 dB quando alguém fala.
-
-### Aparência do avatar
-
-Na tela **Avatar**, ligue **Personalizar cores e logo**:
-
-- **Cores:** camisa, calça, pele, cabelo, sobrancelhas, íris e branco dos olhos. Dá para usar o seletor ou digitar o código (`#RRGGBB`).
-- **Logo:**
-  - escolha entre **VLibras** (original), **Minha logo** ou **Sem logo**;
-  - escolha o arquivo ou arraste a imagem; ela é encaixada no quadro de 500 × 500 que o avatar usa, com margem de 75 px;
-  - use PNG com fundo transparente: o app avisa se a imagem tiver fundo.
-- **Posição da logo:** **Peito**, **Centro** ou **Peito e centro**, com ajuste de **tamanho** e deslocamento **horizontal/vertical**.
-- **Prévia ao vivo** do avatar dentro do app. Ela não conta como overlay na fila e é uma só para o app inteiro: trocar de tela não recarrega o boneco.
-
-As mudanças chegam ao OBS na hora. Desligar a personalização, ou voltar para a logo do VLibras, recarrega o player por alguns segundos, porque o avatar só volta ao visual original assim.
-
-Também dá para mudar pela API local, por exemplo num botão do Stream Deck:
+Se preferir pelo Terminal, este comando faz o mesmo:
 
 ```bash
-curl -X POST http://127.0.0.1:8765/api/appearance -H 'Content-Type: application/json' -d '{"shirt":"#111111","logoMode":"custom","logoPosition":"center"}'
+xattr -dr com.apple.quarantine "/Applications/Libras Live.app"
 ```
 
-Os campos são opcionais: `enabled`, `shirt`, `pants`, `skin`, `hair`, `eyebrows`, `iris`, `eyes`, `logoMode` (`vlibras`, `custom`, `none`), `logoPosition` (`chest`, `center`, `centerAndChest`), `logoScale` (0,3–1), `logoOffsetX` e `logoOffsetY` (-1 a 1).
+### Compilar
 
-> A [personalização oficial do VLibras](https://vlibras.gov.br/doc/widget/functionalities/customize-avatar.html) é exclusiva de instituições parceiras (pedido pelo cgpsp@economia.gov.br). Aqui ela roda localmente: as cores entram pelo método `ApplyJSON` do próprio player (LGPL) e a logo é servida pelo app. Confirme com a equipe do VLibras antes de usar uma logo em transmissão pública.
+```bash
+git clone https://github.com/arnaldobatista/libras-live.git
+```
 
-### Reescrita com IA local
+```bash
+cd libras-live && make run
+```
 
-Opcional, desligada por padrão. Um modelo de linguagem rodando no próprio Mac revisa cada frase antes da tradução para Libras, para ela chegar ao avatar mais clara. Nada sai do Mac: o [Ollama](https://ollama.com) vem dentro do app, numa porta própria, com os modelos em `~/Library/Application Support/LibrasLive/ollama/`.
+O `make run`:
 
-Três modos:
+1. baixa o player do VLibras numa versão fixada;
+2. baixa o Ollama numa versão fixada e confere o SHA-256;
+3. compila em modo release;
+4. monta `build/Libras Live.app` e abre o app.
 
-| Modo | O que faz | Exemplo (fala reconhecida → enviado ao tradutor) |
-|---|---|---|
-| **Fiel** | Corrige erros de transcrição, pontuação e concordância e completa lacunas óbvias. Mantém as palavras e a ordem. | "detalhes de cada eta" → "detalhes de cada etapa" |
-| **Intermediário** | Também tira repetições, hesitações e muletas. Mantém o sentido. | "é uma palavra é uma parábola que reflete…" → "é uma palavra, é uma parábola que reflete…" |
-| **Nova versão** | Reescreve em frases curtas e diretas, fáceis de sinalizar. | "passaremos muito mais tempo explicando e interpretando…" → "Vamos passar mais tempo explicando, interpretando e detalhando cada etapa." |
+Para instalar em Aplicativos:
 
-Como funciona na transmissão:
+```bash
+ditto "build/Libras Live.app" "/Applications/Libras Live.app"
+```
 
-- O reconhecedor confirma a fala em pedaços de ~6 palavras (um a cada 3 ou 4 s na fala corrida). Revisar cada pedaço sozinho quase não muda nada, então a IA recebe trechos maiores. Em **O que vai para a IA** você escolhe:
-  - **Até o ponto final** (padrão): a frase vai inteira quando o reconhecedor põe o ponto; frases com menos de 6 palavras juntam com a seguinte. Sem ponto, corta numa vírgula perto do **máximo de palavras** (30, podendo passar um pouco).
-  - **Por palavras**: junta N palavras e espera um ponto final por mais algumas (**pode passar até**); sem ponto, corta na última vírgula dentro do limite.
-  - **Pausa na fala** (2 s): silêncio no áudio com o texto parado fecha o trecho antes.
-  - Numa sessão real, trechos de pedaço em pedaço tinham 6,8 palavras; até o ponto final ficam com ~22. O custo é a espera: a IA só recebe a frase quando ela termina (uns 9 a 10 s depois do começo, na fala corrida). A tela mostra a espera estimada e o trecho que está juntando.
-- As duas frases anteriores vão junto como contexto (dá para desligar).
-- Cada trecho tem um **tempo máximo** (3 s por padrão, para até 20 palavras; trechos maiores ganham proporcionalmente, até o dobro). Se passar, se a IA estiver atrasada ou se a resposta parecer inventada (palavras demais, de menos ou sentido diferente), vai o texto original. A tradução nunca fica esperando a IA.
-- O histórico marca as frases com **IA · fiel**, **IA · ok** (mesmas palavras) ou **original** (com o motivo), mostra o que foi falado e o inspetor traz os detalhes.
-- O log registra cada reescrita e o resumo do `.txt` traz quantas mudaram, o tempo médio e por que ficou o original.
+## Primeiros passos
 
-Modelos recomendados para o MacBook Pro M1 Pro 16 GB (medidos reescrevendo frases reais das lives):
+Na primeira abertura, as boas-vindas pedem a permissão do microfone, ajudam a escolher o áudio e mostram a URL para o OBS.
 
-| Modelo | Download | Memória | Por frase | Resultado |
-|---|---|---|---|---|
-| `qwen3:4b-instruct-2507-q4_K_M` (recomendado) | 2,5 GB | 2,9 GB | ~1 s | Português natural, corrige sem inventar |
-| `gemma4:e2b-it-qat` | 4,3 GB | 3,6 GB | ~0,8 s | Mais rápido; ótima nova versão, mas no modo fiel às vezes corta palavras |
-| `qwen3.5:4b` | 3,4 GB | 3,1 GB | ~1,6 s | Corrige mais erros do reconhecedor, mais lento |
+1. **Áudio:** escolha o dispositivo e clique nos canais que têm a voz. Ajuste o **ganho** até o medidor ficar entre -30 e -10 dB quando alguém fala.
+2. **OBS:** adicione a fonte de navegador (veja abaixo).
+3. Clique em **Começar** (⌘L). A tela **Ao vivo** mostra a fala reconhecida, a glosa de cada frase e o avatar.
 
-- Com o avatar sinalizando ao mesmo tempo, os tempos sobem cerca de 50%.
-- Modelos de 1 B ou menos (`qwen3.5:0.8b`) erram e inventam. O `granite4.2:3b` é rápido, mas quase não mexe no texto. Os de 8 B ou mais passam de 3 s por frase.
-- O motor desliga o raciocínio ("thinking") dos modelos que pensam; com ele ligado a resposta demora e às vezes nem chega.
-- Depois de instalar uma versão nova, a primeira subida do motor pode levar uns 30 s: o macOS confere os executáveis do Ollama, que vêm assinados só localmente. Depois sobe em menos de 1 s, e carregar o modelo na memória leva de 2 a 9 s (o app faz isso ao ligar a reescrita).
+Para testar sem microfone, digite uma frase no campo embaixo da tela **Ao vivo**.
 
-Na tela **IA local** dá para buscar outros modelos em ollama.com, baixar qualquer versão pelo nome, tirar da memória e excluir. Versões `-mlx` e `nvfp4` não rodam no motor embutido. O motor fecha junto com o app, até se o app travar.
+Na primeira vez que você começa a ouvir, o macOS baixa o modelo de reconhecimento de fala em português. Só nessa vez é preciso esperar um pouco.
 
-### Logs da live
+## No OBS
 
-A tela **Logs** grava cada sessão em `~/Library/Application Support/LibrasLive/logs/`: fala reconhecida, glosa, ajustes na glosa, envios ao avatar, descartes com motivo, sinais inexistentes e tempos.
+![A tela OBS: URL para copiar e passo a passo](docs/images/obs.png)
 
-- **Salvar log…** (⇧⌘S) grava dois arquivos: um `.txt` legível e um `.jsonl` com os dados completos para análise.
-  - O resumo do `.txt` traz descartes, velocidade, espera na fila, frases por envio, origem dos trechos, tempo até a frase ficar pronta e tempo parado.
-  - Depois do resumo vem a linha do tempo.
-- **Sessões anteriores** podem ser salvas ou mostradas no Finder. Sessões em que o app só abriu e fechou, sem ouvir nem traduzir, são apagadas sozinhas.
-- **Apagar todos os logs…** apaga tudo e começa um arquivo novo.
-
-Para ler um `.jsonl` no terminal: `swift run libras-probe log arquivo.jsonl`.
-
-### No OBS
-
-1. **Fontes › + › Navegador**
+1. Em **Fontes**, clique em **+** e escolha **Navegador**.
 2. URL: `http://127.0.0.1:8765/`
-3. Largura × altura: `540 × 960` (vertical) ou `720 × 720`
-4. Deixe desmarcado *"Desligar fonte quando não visível"*, para o avatar não recarregar ao trocar de cena
+3. Largura × altura: `540 × 960` (vertical) ou `720 × 720`.
+4. Deixe desmarcado **Desligar fonte quando não visível**, para o avatar não recarregar ao trocar de cena.
 
 O fundo já é transparente. Parâmetros opcionais na URL:
 
 | Parâmetro | Exemplo | Efeito |
 |---|---|---|
-| `bg` | `bg=00ff00` | Cor de fundo (chroma key, se preferir) |
+| `bg` | `bg=00ff00` | Cor de fundo (para chroma key) |
 | `avatar` | `avatar=hosana` | `icaro`, `hosana` ou `guga` |
 | `subtitles` | `subtitles=1` | Legenda do próprio avatar |
 | `debug` | `debug=1` | Painel com conexão, fala e glosa |
 
-Você pode ter mais de um overlay aberto (duas cenas, um monitor no navegador). A fila só avança quando todos os overlays **visíveis** terminam. Abas em segundo plano rodam a ~0 fps e são ignoradas; o app mostra *"(1 oculto)"*.
+Dá para ter mais de um overlay aberto, por exemplo em duas cenas. A fila só avança quando todos os overlays **visíveis** terminam. Abas em segundo plano rodam a ~0 fps e são ignoradas.
 
-### Dicas para a mesa (Ui24 e similares)
+## Telas
 
-- Mande para o Mac um canal ou auxiliar **só de voz**, sem música nem retorno. Isso é o que mais melhora o reconhecimento.
-- Use `make scan D='Soundcraft'` enquanto alguém fala para ver o pico de cada canal no terminal.
-- O OBS e o Libras Live podem ler o mesmo dispositivo ao mesmo tempo.
+| Tela | O que tem |
+|---|---|
+| **Ao vivo** | Atraso, velocidade, fila, frases sinalizadas e descartadas; a fala reconhecida; o histórico com a glosa de cada frase; a prévia do avatar e a troca rápida de personagem. |
+| **Áudio** | Dispositivo, canais, nível de cada canal, ganho e detector de voz. |
+| **Avatar** | Personagem, legenda do próprio avatar, cores e logo. |
+| **OBS** | URL para copiar, passo a passo, overlays conectados, fundo para chroma key, painel de diagnóstico e porta. |
+| **Tradução** | Velocidade do avatar, fila (juntar frases e descartes), ajustes da glosa e do reconhecimento de fala, dicionário. |
+| **IA local** | Reescrita com IA: modo, modelo, o que vai para a IA, teste nos três modos, modelos recomendados e gerenciamento dos modelos. |
+| **Logs** | Sessão atual com resumo, sessões anteriores, salvar e apagar. |
 
-## Como funciona
+Atalhos: **⌘L** começar ou parar, **⌘K** limpar a fila, **⌘T** testar uma frase, **⌥⌘C** copiar a URL do overlay, **⇧⌘S** salvar o log, **⌘1** a **⌘7** trocar de tela e **⌘,** ajustes.
 
-| Etapa | Onde | Detalhes |
+O ícone na barra de menus também começa e para, e mostra o atraso e a fila.
+
+## Aparência do avatar
+
+![A tela Avatar: personagens, cores e prévia ao vivo](docs/images/avatar.png)
+
+Na tela **Avatar**, ligue **Personalizar cores e logo**:
+
+- **Cores:** camisa, calça, pele, cabelo, sobrancelhas, íris e branco dos olhos.
+- **Logo:** a do VLibras, a sua ou nenhuma. Use PNG com fundo transparente; o app encaixa a imagem no quadro que o avatar usa.
+- **Posição da logo:** peito, centro ou os dois, com tamanho e deslocamento.
+
+As mudanças chegam ao OBS na hora. Desligar a personalização recarrega o player por alguns segundos.
+
+> A [personalização oficial do VLibras](https://vlibras.gov.br/doc/widget/functionalities/customize-avatar.html) é oferecida a instituições parceiras. Aqui ela roda localmente, pelo método `ApplyJSON` do próprio player (LGPL). **Confirme com a equipe do VLibras antes de usar a sua logo numa transmissão pública.**
+
+## Reescrita com IA local
+
+Opcional e desligada por padrão. Um modelo de linguagem rodando no Mac revisa a fala antes da tradução, para a frase chegar mais clara ao avatar. Nada sai do computador: o Ollama vem dentro do app, numa porta própria, e não usa os modelos nem a porta de um Ollama que você já tenha instalado.
+
+![A tela IA local: modos, modelo e o que vai para a IA](docs/images/ia-local.png)
+
+| Modo | O que faz | Exemplo (fala reconhecida → enviado ao tradutor) |
 |---|---|---|
-| Captura | `Sources/AudioCapture` | AUHAL com mapa de canais: o Core Audio entrega só os canais escolhidos. Soma em mono, ganho e medidor. Reinicia sozinho se o dispositivo cair ou mudar. `ChannelScanner` mede todos os canais para o seletor. |
-| Fala→texto | `Sources/Transcription` | `SpeechAnalyzer` + `SpeechTranscriber` pt-BR, no próprio Mac. O áudio é convertido para o formato do reconhecedor fora da thread de áudio. |
-| Frases estáveis | `LibrasCore/SpeechCommitController` | Decide quando a fala vira trecho, sem nunca cortar palavra. **Frase:** pontuação seguida de mais uma palavra. **Fala corrida:** palavras que não mudam há 1,2 s e já têm 3 palavras depois saem em blocos de ~6. **Pausa:** silêncio no áudio (detector de voz com piso de ruído adaptativo) e texto parado há 1,2 s. **Final** do reconhecedor. |
-| Trechos | `LibrasCore/Segmenter` | Corta frases longas (padrão 14 palavras), preferindo vírgulas. |
-| Glosa | `LibrasCore/GlossService` | `POST https://traducao2.vlibras.gov.br/translate` (~100 ms), cache LRU em memória e disco. Se a API falhar, tenta de novo antes de usar a glosa de emergência. |
-| Glosa otimizada | `LibrasCore/GlossOptimizer` | Remove `[PONTO]` e repetições (`SENHOR SENHOR`). Troca compostos e palavras sem sinal por formas existentes no dicionário: `NÃO_PRATICAR` vira `PRATICAR NÃO`, `DISCERNIRMO` vira `DISCERNIR`, `QUANTA` vira `QUANTO`. Palavras sem sinal são soletradas só se forem curtas. Se a API falhar, tira artigos e preposições em vez de soletrar a frase inteira. |
-| Fila | `LibrasCore/SignScheduler` | Mantém a ordem da fala e **junta as frases prontas num único envio** (até 20 s). Mede o atraso em segundos de sinalização. Com atraso, acelera, enxuga a glosa (pula palavras sem sinal e muletas), descarta primeiro repetições e só depois frases antigas. |
-| Overlays | `LibrasCore/OverlayRoster` | Controla quem está pronto ou visível e quem ainda precisa terminar a glosa atual. |
-| Servidor | `Sources/OverlayServer` | Hummingbird 2 em `127.0.0.1`: página, WebSocket, cache dos sinais em disco (com downloads deduplicados e pré-carregamento) e API. |
-| Overlay | `Overlay/` | Player Unity WebGL do VLibras sem o widget, controlado por `overlay.js`. Detecta fim da reprodução por evento de estado e pelo contador de sinais, com vigia de 30 s. Aplica a aparência com `CustomizationBridge.ApplyJSON` e recarrega quando é preciso voltar ao original. Só mostra o canvas com o avatar pronto (esconde a tela branca de abertura do Unity). Na prévia do app, limpa o canvas com preto transparente para o WebKit não desenhar um contorno branco no avatar. |
-| Reescrita | `LibrasCore/PhraseRewrite`, `LocalAI` | `RewriteBuffer` junta os trechos em frases, `RewritePrompt` monta as instruções de cada modo e `RewriteValidator` recusa respostas fora do formato, longas ou curtas demais ou que perderam as palavras do original. `OllamaEngine` sobe o `ollama serve` embutido sob um vigia em `sh` (fecha junto com o app), `OllamaClient` fala com a API, `PhraseRewriter` aplica o prazo e `OllamaLibrary` lê a busca de ollama.com. As frases passam pela IA uma de cada vez, na ordem da fala. |
-| Aparência | `LibrasCore/AvatarAppearance`, `LogoRenderer` | Gera o JSON do player (`cabelo`, `calca`, `camisa`, `corpo`, `iris`, `olhos`, `sombrancelhas`, `logo`, `pos`; formato lido dos metadados do build) e renderiza a logo no quadro de 500 × 500. |
+| **Fiel** | Corrige erros de transcrição, pontuação e concordância e completa lacunas óbvias. Mantém as palavras e a ordem. | "os detalhes de cada eta" → "os detalhes de cada etapa" |
+| **Intermediário** | Também tira repetições, hesitações e muletas. Mantém o sentido. | "é uma palavra é uma parábola que…" → "é uma palavra, é uma parábola que…" |
+| **Nova versão** | Reescreve em frases curtas e diretas, fáceis de sinalizar. | "passaremos muito mais tempo explicando e interpretando…" → "Vamos passar mais tempo explicando, interpretando e detalhando cada etapa." |
 
-Dados locais ficam em `~/Library/Application Support/LibrasLive/`: `gloss-cache.json`, `signs/`, `logs/`, `appearance/` (logo original, logo pronta e imagem transparente) e `ollama/` (modelos, log do motor e chave do Ollama).
+Como funciona na transmissão:
 
-### Protocolo do WebSocket (`/ws`)
+- O reconhecedor confirma a fala em pedaços de poucas palavras, e revisar cada pedaço sozinho quase não muda nada. Por isso a IA recebe a frase inteira, **até o ponto final**, ou um número de **palavras** que você escolhe. Uma pausa na fala fecha o trecho antes.
+- Trecho maior é revisado melhor, mas chega mais tarde ao avatar. A tela mostra a espera estimada.
+- Cada trecho tem um **tempo máximo**. Se a IA passar dele, ou se a resposta parecer inventada, vai o texto original. A tradução nunca fica esperando a IA.
+- O histórico marca o que a IA mudou e mostra o que foi falado.
 
-```jsonc
-// app → overlay
-{ "type": "gloss", "id": 42, "gloss": "BOM_DIA [PONTO]", "text": "Bom dia.", "speed": 1.2 }
-{ "type": "config", "avatar": "icaro", "subtitles": false, "speed": 1, "signsBaseUrl": "http://127.0.0.1:8765/signs/",
-  "appearance": "{\"camisa\":\"#111111\",…}", "appearanceRevision": 3, "appearanceReload": false }
-{ "type": "caption", "text": "bom dia pes…", "final": false }
-{ "type": "stop" }
+Modelos recomendados, medidos reescrevendo frases reais de transmissões num MacBook Pro M1 Pro com 16 GB:
 
-// overlay → app
-{ "type": "hello", "loaded": true, "visible": true }
-{ "type": "ready", "visible": true }
-{ "type": "visibility", "visible": false }
-{ "type": "playing", "id": 42 }
-{ "type": "progress", "counter": 1, "total": 2 }
-{ "type": "ended", "id": 42, "reason": "done" }
-```
+| Modelo | Download | Memória | Por frase | Resultado |
+|---|---|---|---|---|
+| `qwen3:4b-instruct-2507-q4_K_M` (recomendado) | 2,5 GB | 2,9 GB | ~1 s | Português natural, corrige sem inventar |
+| `gemma4:e2b-it-qat` | 4,3 GB | 3,6 GB | ~0,8 s | Mais rápido; ótimo na nova versão, mas no modo fiel às vezes corta palavras |
+| `qwen3.5:4b` | 3,4 GB | 3,1 GB | ~1,6 s | Corrige mais erros do reconhecedor, porém é mais lento |
 
-### API local
+A tela **IA local** baixa os recomendados com um clique, busca outros modelos em ollama.com, carrega, tira da memória e exclui. As medições completas estão em [docs/medicoes.md](docs/medicoes.md).
 
-Útil para Stream Deck, automações e testes. Só aceita chamadas locais: `Host` precisa ser local, origens de outros sites são recusadas e `POST` exige JSON.
+## Logs
+
+A tela **Logs** grava cada sessão em `~/Library/Application Support/LibrasLive/logs/`: fala reconhecida, glosa, envios ao avatar, descartes com o motivo, reescritas da IA e tempos. **Salvar log…** (⇧⌘S) gera um `.txt` legível, com resumo e linha do tempo, e um `.jsonl` com os dados completos.
+
+O log contém a fala transcrita. Revise antes de compartilhar.
+
+## API local
+
+Para Stream Deck, automações e testes. Só aceita chamadas do próprio Mac.
 
 ```bash
 curl -X POST http://127.0.0.1:8765/api/say -H 'Content-Type: application/json' -d '{"text":"Bom dia a todos"}'
@@ -196,156 +213,51 @@ curl -X POST http://127.0.0.1:8765/api/clear -H 'Content-Type: application/json'
 curl http://127.0.0.1:8765/api/status
 ```
 
-Atalhos equivalentes: `make say T='Bom dia'`, `make clear` e `make status`.
+`POST /api/appearance` muda cores e logo. Os campos estão em [docs/arquitetura.md](docs/arquitetura.md#api-local).
 
-## Desenvolvimento
+## Dicas para a mesa de som
 
-```bash
-make test
-```
+- Mande para o Mac um canal ou auxiliar **só de voz**, sem música nem retorno. Isso é o que mais melhora o reconhecimento.
+- O OBS e o Libras Live podem ler o mesmo dispositivo ao mesmo tempo.
+- Na tela **Áudio**, ligue **Mostrar nível de cada canal** enquanto alguém fala para achar o canal da voz.
 
-```bash
-make e2e
-```
+## Solução de problemas
 
-```bash
-make burst
-```
+- **O avatar não aparece no OBS.** Confira se a URL da fonte é a mesma da tela **OBS**: a porta muda se você trocar no app. A tela **OBS** mostra se há overlay conectado. Com `?debug=1` no fim da URL, a página mostra a conexão e o estado do player.
+- **"Sem permissão de microfone".** Libere o Libras Live em **Ajustes do Sistema › Privacidade e Segurança › Microfone** e clique em **Começar** de novo.
+- **Erro "Servidor do overlay" ao abrir.** Outro programa, ou outra cópia do Libras Live, está usando a porta 8765. Feche a outra cópia ou troque a porta em **OBS › Servidor** e atualize a URL no OBS.
+- **O avatar atrasa ou descarta frases.** Sinalizar leva mais tempo que falar. Mande um canal só de voz e ajuste a velocidade em **Tradução**. O resumo do log mostra quanto foi descartado e por quê.
+- **A IA deixa o texto original.** O histórico mostra o motivo. Se for "passou do tempo máximo", aumente o tempo em **IA local** ou use um modelo mais rápido. Logo depois de instalar uma versão nova, o motor pode levar uns 30 s para iniciar na primeira vez, enquanto o macOS confere os executáveis.
 
-- `make test` roda os testes unitários: segmentação, fila, frases estáveis, reescrita (prompt, validação, agrupamento), leitura da busca do Ollama, overlays, protocolo, cache e política de origem.
-- `make e2e` precisa do app aberto. Ele abre o overlay no Chrome headless, envia frases e mede o tempo até tocar e terminar.
-- `make burst` manda 6 frases de uma vez para validar a aceleração e o descarte.
+## Privacidade
 
-> `make e2e`, `make burst` e `make say` mandam frases para **todos** os overlays conectados, inclusive o do OBS. Com o OBS aberto, use a segunda instância isolada descrita abaixo.
+- O **áudio** não sai do Mac. O reconhecimento de fala roda no computador.
+- O **texto reconhecido** vai para a API de tradução do VLibras (`traducao2.vlibras.gov.br`), e as **animações dos sinais** vêm do dicionário do VLibras. As duas coisas ficam em cache no Mac.
+- A **IA local** roda no Mac. O app só fala com o ollama.com quando você busca ou baixa um modelo.
+- O servidor do app só atende o próprio Mac (`127.0.0.1`), e a API recusa chamadas vindas de sites.
+- Os **logs** ficam no Mac. Não há telemetria.
 
-Medir e simular:
-
-```bash
-make bench
-```
-
-```bash
-swift run libras-probe simulate sessao.tsv --grid
-```
-
-- `make bench` mede quanto o avatar leva por tipo de glosa e velocidade. Precisa do app aberto; toca só na página headless, sem afetar o OBS.
-- `simulate` reproduz uma sessão contra a fila com o modelo medido. O arquivo tem uma frase por linha, `HH:MM:SS<TAB>texto<TAB>glosa`. `--grid` compara combinações de ajustes e `--timeline` mostra cada envio.
-
-Segunda instância isolada, para testar sem mexer no app aberto no OBS:
-
-```bash
-LIBRAS_PORT=8799 LIBRAS_SUPPORT_DIR=/tmp/libras-teste .build/debug/LibrasLive
-```
-
-```bash
-node Scripts/e2e-overlay.mjs --port 8799 --burst
-```
-
-O motor de IA vem de `Scripts/fetch-ollama.sh` (`make ollama`): baixa o Ollama numa versão fixada, confere o SHA-256 e guarda em `Vendor/ollama` só o `ollama` e o `llama-server` de Apple Silicon (46 MB em vez de 500 MB). O `build-app.sh` copia para `Contents/Resources/ollama`.
-
-Testar a reescrita sem abrir o app (usa o motor de `Vendor/` e os modelos do app):
-
-```bash
-swift run libras-probe rewrite "passaremos muito mais tempo explicando e interpretando os detalhes de cada eta."
-```
-
-Diagnóstico por linha de comando (`libras-probe`):
-
-```bash
-swift run libras-probe devices
-```
-
-```bash
-swift run libras-probe scan "Soundcraft" 8
-```
-
-```bash
-swift run libras-probe level "Soundcraft" 5 10
-```
-
-```bash
-swift run libras-probe transcribe fala.aiff
-```
-
-```bash
-swift run libras-probe listen "Soundcraft" 5 30
-```
-
-```bash
-swift run libras-probe gloss "Bom dia a todos"
-```
-
-```bash
-swift run libras-probe log sessao.jsonl
-```
-
-Os canais são numerados a partir de 1. Para gerar um áudio de teste: `say -v Luciana -o fala.aiff "Boa noite pessoal."`.
-
-Variáveis para abrir o app direto num estado (capturas de tela e testes de interface): `LIBRAS_SECTION` (`live`, `audio`, `avatar`, `obs`, `translation`, `logs`), `LIBRAS_ONBOARDING=1` com `LIBRAS_ONBOARDING_STEP` (1 a 4), `LIBRAS_OPEN_SETTINGS=1`, `LIBRAS_WINDOW_SIZE=1040x800` (tamanho da janela), `LIBRAS_SECTION_TOUR="audio:3,live:3"` (troca de tela sozinha), `LIBRAS_BACKGROUND=1` (abre sem roubar o foco), `LIBRAS_AI_TEST=1`, `LIBRAS_AI_SEARCH=1` e `LIBRAS_AI_PULL=<modelo>` (tela IA local). `LIBRAS_OLLAMA_DIR` aponta para outra pasta de modelos e `LIBRAS_OLLAMA_BIN` para outro executável do Ollama.
-
-Ícone e miniaturas:
-
-- O ícone é um arquivo do Icon Composer (`Resources/AppIcon.icon`, com vidro Liquid Glass) gerado a partir das formas em `Sources/LibrasLive/Brand/BrandMark.swift`. Para regerar, veja o cabeçalho de `Scripts/render-icon.swift`. O `build-app.sh` compila o ícone e a cor de destaque com `actool`.
-- As miniaturas dos personagens (`Resources/Avatars`) saem de `node Scripts/render-avatars.mjs --port 8799`, com uma instância isolada aberta.
-
-Para editar o overlay sem remontar o app:
-
-```bash
-open --env LIBRAS_OVERLAY_DIR="$PWD/Overlay" "build/Libras Live.app"
-```
-
-### O que a segunda live mostrou (14/09, conteúdo técnico corrido)
-
-- **Descartes caíram de 26% para 10%** com as frases juntas: 145 frases em 23 envios, 6,3 por envio.
-- **Palavras cortadas** (`multipl`, `jogu`, `repetid`): a confirmação por "0,8 s sem atualização" disparava no meio da fala, porque o reconhecedor atualiza em rajadas de ~1 s. Foi reproduzido com áudio e corrigido com o detector de voz e o prefixo estável. No mesmo áudio técnico de 30 s, a regra antiga gerou 31 fragmentos, 10 com palavra cortada; a nova gerou 12 trechos completos.
-- **Modelo de tempo recalibrado** com os envios reais no OBS: ≈ 1,2 s + 1,84 s × sinais ÷ velocidade, contra 2,0 + 2,3 no Chrome headless. O simulador reproduz a live com 21 descartes, contra 16 reais.
-- **Condensar o texto com o modelo de linguagem do macOS** foi testado com trechos reais e rejeitado: ele bloqueou trechos religiosos, inventou conteúdo em fragmentos e levou até 8,8 s na primeira chamada.
-
-### Por que o avatar descartava frases
-
-Medições do avatar com `Scripts/bench-avatar.mjs` (Chrome headless):
-
-| Glosa | 1× | 2× | 3× | 4× |
-|---|---|---|---|---|
-| 1 sinal | 4,06 s | 3,29 s | 2,82 s | — |
-| 4 sinais | 11,99 s | 6,83 s | 5,07 s | 4,19 s |
-| Palavra soletrada (11 letras) | 10,65 s | 7,75 s | 6,22 s | — |
-| `NÃO_PRATICAR` (soletrado) vs `PRATICAR NÃO` | 9,93 / 6,59 s | 7,21 / 4,17 s | 5,82 / 3,28 s | — |
-
-- Cada envio ao avatar tem **~2 s fixos de transição** (sair do descanso e voltar), que a velocidade não reduz. Por isso o boneco "parava" entre frases.
-- Cada sinal custa ~2,3 s ÷ velocidade.
-- Soletrar acelera pouco com a velocidade.
-
-Simulação da pregação da live de 14/09 (43 frases em ~3 min, velocidade 2–3×) com `libras-probe simulate`. A configuração antiga deu 12 descartes na simulação, contra 11 na live real:
-
-| Configuração | Descartadas | Atraso médio |
-|---|---|---|
-| Antes (v0.1) | 12 (28%) | 13,2 s |
-| Juntar frases (envio de até 20 s) | 5 (12%) | 11,4 s |
-| Juntar + descartar após 20 s | 2 (5%) | 15,7 s |
-| Juntar + velocidade máxima 3,5× | 1 (2%) | 10,8 s |
-
-### Medições (M1 Pro, macOS 26.6)
-
-| Medição | Resultado |
-|---|---|
-| Frase confirmada após ser falada | ~1,4 s |
-| Frase na fila → glosa enviada ao avatar | 0,02–0,12 s |
-| Primeiro sinal concluído | ~3–4 s após a frase entrar |
-| Rajada de 6 frases longas | atraso estimado de 33 s → 2× de velocidade, 3 tocadas e 3 descartadas |
-
-## Limitações conhecidas
+## Limitações
 
 - **Qualidade:** a glosa do VLibras é automática. Nomes próprios e termos técnicos costumam sair soletrados.
-- **Dependência do VLibras:** tradução e dicionário vêm dos servidores públicos. O cache reduz o impacto de uma queda, mas frases e sinais nunca vistos precisam de internet.
-- **Página oculta:** o avatar só roda em fonte visível (OBS ou aba em primeiro plano). A prévia dentro do app pausa enquanto não aparece (outra tela aberta ou janela coberta) e volta na hora; o OBS não é afetado.
-- **Uma voz por vez:** o reconhecedor não separa falantes. Some só os canais de quem fala.
-- **Reescrita com IA:** a frase chega ao avatar depois de terminar de ser falada (espera pelo ponto final ou pelas palavras escolhidas) mais 1 a 2 s de resposta. Com a fila muito atrasada, as frases passam direto para não aumentar o atraso. A IA pode interpretar errado uma frase ambígua; o modo **Fiel** é o mais seguro.
+- **Dependência do VLibras:** a tradução e o dicionário vêm dos servidores públicos. O cache ajuda numa queda, mas frase e sinal nunca vistos precisam de internet.
+- **Atraso:** em fala rápida e corrida, o avatar acelera e, se precisar, descarta frases.
+- **Uma voz por vez:** o reconhecedor não separa quem está falando. Envie só os canais de quem fala.
+- **Página oculta:** o avatar só roda numa fonte visível. A prévia dentro do app pausa quando não aparece; o OBS não é afetado.
+- **Reescrita com IA:** a frase só chega ao avatar depois de terminar de ser falada, mais 1 a 2 s de resposta. A IA pode entender errado uma frase ambígua; o modo **Fiel** é o mais seguro.
 
-## Licenças
+## Uso responsável
 
-- Código deste projeto: defina a licença antes de publicar.
-- Player VLibras (`Overlay/vlibras/`, baixado por `Scripts/fetch-vlibras.sh`): LGPL-3.0, © LAVID/UFPB. A licença acompanha os arquivos.
-- A API de tradução e o dicionário são serviços públicos do VLibras.
-- Ollama (`Vendor/ollama/`, baixado por `Scripts/fetch-ollama.sh`, e dentro do app): MIT, com as licenças das dependências (llama.cpp, MLX e outras) na mesma pasta.
-- Cada modelo tem a própria licença (ex.: Qwen: Apache 2.0; Gemma: termos de uso do Gemma). Confira em ollama.com antes de usar.
+- Avise o público que a tradução para Libras é automática.
+- Prefira intérprete sempre que houver, principalmente em conteúdo importante, como saúde, serviços públicos e emergências.
+- Respeite os termos dos serviços do VLibras e a licença de cada modelo de IA que você baixar.
+
+## Contribuir
+
+Problemas, ideias e pull requests são bem-vindos. Veja o [CONTRIBUTING.md](CONTRIBUTING.md). A documentação técnica fica em [docs/](docs): [arquitetura](docs/arquitetura.md), [desenvolvimento](docs/desenvolvimento.md) e [medições](docs/medicoes.md).
+
+## Licença
+
+[MIT](LICENSE). Você pode usar, copiar, modificar, distribuir e até vender, contanto que mantenha o aviso de copyright e o texto da licença em toda cópia ou trecho substancial do código.
+
+O app usa e acompanha componentes de terceiros com licenças próprias, como o player do VLibras (LGPL-3.0) e o Ollama (MIT). A lista completa está em [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

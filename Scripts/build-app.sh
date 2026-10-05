@@ -26,6 +26,24 @@ if [[ -d "$ROOT/Resources/Avatars" ]]; then
   rsync -a --delete --exclude ".DS_Store" "$ROOT/Resources/Avatars/" "$APP/Contents/Resources/Avatars/"
 fi
 
+# Licenças num lugar só (Ajustes › Sobre › Licenças). As bibliotecas Swift são Apache-2.0,
+# que pede o texto da licença e o NOTICE junto de toda cópia do binário.
+echo "Juntando as licenças..."
+LICENSES="$APP/Contents/Resources/Licenses"
+mkdir -p "$LICENSES/vlibras" "$LICENSES/ollama" "$LICENSES/swift"
+cp "$ROOT/LICENSE" "$LICENSES/Libras-Live-LICENSE.txt"
+cp "$ROOT/THIRD_PARTY_NOTICES.md" "$LICENSES/"
+cp "$ROOT/Overlay/vlibras/LICENSE" "$LICENSES/vlibras/LICENSE"
+find "$ROOT/Vendor/ollama" -maxdepth 1 \( -name '*LICENSE*' -o -name '*NOTICE*' \) -exec cp {} "$LICENSES/ollama/" \;
+shopt -s nullglob
+for checkout in "$ROOT"/.build/checkouts/*/; do
+  files=("$checkout"LICENSE* "$checkout"LICENCE* "$checkout"NOTICE* "$checkout"COPYING*)
+  (( ${#files[@]} )) || continue
+  mkdir -p "$LICENSES/swift/$(basename "$checkout")"
+  cp "${files[@]}" "$LICENSES/swift/$(basename "$checkout")/"
+done
+shopt -u nullglob
+
 echo "Compilando ícone (Liquid Glass) e cor de destaque..."
 ASSETS_TMP="$(mktemp -d)"
 xcrun actool "$ROOT/Resources/AppIcon.icon" "$ROOT/Resources/Assets.xcassets" \

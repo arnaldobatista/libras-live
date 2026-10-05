@@ -1,0 +1,47 @@
+name: Problema
+description: Algo não funcionou como deveria
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Antes de abrir, veja a seção [Solução de problemas](https://github.com/arnaldobatista/libras-live#solução-de-problemas) do README. Se o problema é a glosa ou um sinal errado, ele provavelmente vem do VLibras: teste com `swift run libras-probe gloss "a frase"`.
+  - type: textarea
+    id: oque
+    attributes:
+      label: O que aconteceu
+      description: O que você fez, o que esperava e o que apareceu. A mensagem de erro exata ajuda muito.
+    validations:
+      required: true
+  - type: input
+    id: versao
+    attributes:
+      label: Versão do Libras Live
+      description: Em Ajustes › Sobre.
+      placeholder: "0.3.0"
+    validations:
+      required: true
+  - type: input
+    id: mac
+    attributes:
+      label: Mac e versão do macOS
+      placeholder: MacBook Pro M1 Pro 16 GB, macOS 26.6
+    validations:
+      required: true
+  - type: input
+    id: audio
+    attributes:
+      label: Entrada de áudio
+      description: Dispositivo e canais usados.
+      placeholder: Soundcraft Ui24, canal 5
+  - type: textarea
+    id: log
+    attributes:
+      label: Resumo do log da sessão
+      description: "Em Logs › Salvar log…, o começo do .txt (a parte RESUMO e as linhas perto do problema). O log traz a fala transcrita: revise antes de colar."
+      render: text
+  - type: input
+    id: ia
+    attributes:
+      label: IA local (se usava)
+      placeholder: qwen3:4b-instruct-2507-q4_K_M, modo fiel

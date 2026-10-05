@@ -59,6 +59,11 @@ struct RootView: View {
                           let screen = window.screen else { return }
                     let visible = screen.visibleFrame
                     window.setFrame(NSRect(x: visible.minX + 40, y: visible.maxY - size[1], width: size[0], height: size[1]), display: true)
+                    // LIBRAS_WINDOW_FLOAT=1: fica acima das outras janelas sem roubar o foco. Coberta, a janela
+                    // pausa a prévia do avatar (WebKit), e as capturas de tela saem sem o boneco.
+                    if ProcessInfo.processInfo.environment["LIBRAS_WINDOW_FLOAT"] == "1" {
+                        window.level = .floating
+                    }
                 }
             }
         }

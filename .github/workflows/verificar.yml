@@ -1,0 +1,47 @@
+name: Verificar
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verificar-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Ferramentas
+        id: ferramentas
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+          echo "xcode=$(xcodebuild -version | head -1 | tr ' ' '-')" >> "$GITHUB_OUTPUT"
+
+      # O .build de outra versão do Xcode não serve: a chave inclui a versão.
+      - name: Cache do SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-${{ steps.ferramentas.outputs.xcode }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: spm-${{ steps.ferramentas.outputs.xcode }}-
+
+      - name: Compilar
+        run: swift build
+
+      - name: Testes
+        run: swift test
+
+      - name: Scripts, overlay e Info.plist
+        run: |
+          for script in Scripts/*.sh; do bash -n "$script"; done
+          node --check Overlay/overlay.js
+          plutil -lint Resources/Info.plist

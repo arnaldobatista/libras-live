@@ -1,14 +1,15 @@
 APP := build/Libras Live.app
 PORT ?= 8765
 
-.PHONY: help vlibras ollama build test app run dev clean say clear status devices scan e2e burst bench
+.PHONY: help vlibras ollama build test app run zip dev clean say clear status devices scan e2e burst bench
 
 help:
 	@echo "make vlibras  baixa o player Unity do VLibras"
 	@echo "make ollama   baixa o motor de IA local (Ollama, só Apple Silicon)"
 	@echo "make test     roda os testes"
-	@echo "make app     monta build/Libras Live.app"
+	@echo "make app      monta build/Libras Live.app"
 	@echo "make run      monta e abre o app"
+	@echo "make zip      monta o app e gera o .zip do release com o SHA-256"
 	@echo "make dev      roda direto com swift run (debug)"
 	@echo "make say T='bom dia'   injeta uma frase no app em execução"
 	@echo "make clear    limpa a fila do app em execução"
@@ -36,6 +37,9 @@ app:
 
 run: app
 	open "$(APP)"
+
+zip:
+	./Scripts/package-app.sh
 
 dev: vlibras ollama
 	swift run LibrasLive

@@ -89,7 +89,8 @@ public enum AudioDevices {
         return list.reduce(0) { $0 + Int($1.mNumberChannels) }
     }
 
-    static func getValue<T>(
+    /// Lê uma propriedade de valor simples (número, ID). Só tipos sem referências: o Core Audio copia os bytes.
+    static func getValue<T: BitwiseCopyable>(
         _ object: AudioObjectID,
         _ selector: AudioObjectPropertySelector,
         _ value: inout T,

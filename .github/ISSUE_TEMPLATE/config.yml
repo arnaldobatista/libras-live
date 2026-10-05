@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Glosa ou sinal errado do VLibras
+    url: https://vlibras.gov.br
+    about: A tradução para glosa e as animações dos sinais vêm do VLibras. Erros de tradução ou de sinal devem ir para a equipe deles.
+  - name: Vulnerabilidade de segurança
+    url: https://github.com/arnaldobatista/libras-live/security/advisories/new
+    about: Relate em particular, não numa issue pública.

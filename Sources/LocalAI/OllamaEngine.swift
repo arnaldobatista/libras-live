@@ -125,6 +125,7 @@ public actor OllamaEngine {
             try manager.createDirectory(at: directory, withIntermediateDirectories: true)
         }
         terminateLeftover()
+        Self.clearQuarantine(nextTo: configuration.binary)
 
         guard let port = Self.freePort(startingAt: configuration.preferredPort) else { throw EngineError.noFreePort }
 
@@ -194,6 +195,16 @@ public actor OllamaEngine {
             usleep(100_000)
         }
         if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
+    }
+
+    /// App baixado da internet: o macOS marca todos os arquivos com quarentena. Liberar o app em
+    /// Privacidade e Segurança vale para ele, mas os executáveis do Ollama dentro dele seriam barrados
+    /// ao rodar. Tira a marca só deles (sem efeito se o app estiver numa pasta só de leitura).
+    static func clearQuarantine(nextTo binary: URL) {
+        let folder = binary.deletingLastPathComponent()
+        for name in [binary.lastPathComponent, "llama-server"] {
+            removexattr(folder.appendingPathComponent(name).path, "com.apple.quarantine", 0)
+        }
     }
 
     /// $1 = executável do Ollama, $2 = arquivo com o PID do motor, $3 = PID do app.

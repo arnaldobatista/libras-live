@@ -2,16 +2,19 @@ import SwiftUI
 
 /// Janela de Ajustes (⌘,): preferências gerais do app.
 struct SettingsView: View {
+    /// `LIBRAS_SETTINGS_TAB=about` abre direto no Sobre (capturas de tela).
+    @State private var tab = ProcessInfo.processInfo.environment["LIBRAS_SETTINGS_TAB"] ?? "general"
+
     var body: some View {
-        TabView {
-            Tab("Geral", systemImage: "gearshape") {
+        TabView(selection: $tab) {
+            Tab("Geral", systemImage: "gearshape", value: "general") {
                 GeneralSettings()
             }
-            Tab("Sobre", systemImage: "info.circle") {
+            Tab("Sobre", systemImage: "info.circle", value: "about") {
                 AboutSettings()
             }
         }
-        .frame(width: 520, height: 380)
+        .frame(width: 520, height: 400)
     }
 }
 
@@ -56,7 +59,42 @@ private struct AboutSettings: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 380)
+
+            HStack(spacing: 10) {
+                Link(destination: AppLinks.repository) {
+                    Label("Código-fonte", systemImage: "chevron.left.forwardslash.chevron.right")
+                }
+                Link(destination: AppLinks.newIssue) {
+                    Label("Relatar um problema", systemImage: "exclamationmark.bubble")
+                }
+                Button("Licenças", systemImage: "doc.text") { AppLinks.openLicenses() }
+            }
+            .buttonStyle(.glass)
+            .controlSize(.small)
+            .padding(.top, 4)
+
+            Text(Bundle.main.object(forInfoDictionaryKey: "NSHumanReadableCopyright") as? String ?? "Licença MIT")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// Endereços do projeto.
+enum AppLinks {
+    static let repository = URL(string: "https://github.com/arnaldobatista/libras-live")!
+    static let newIssue = URL(string: "https://github.com/arnaldobatista/libras-live/issues/new/choose")!
+    static let thirdPartyNotices = URL(string: "https://github.com/arnaldobatista/libras-live/blob/main/THIRD_PARTY_NOTICES.md")!
+
+    /// Pasta com as licenças dentro do app; fora do .app (desenvolvimento), a lista no GitHub.
+    @MainActor
+    static func openLicenses() {
+        if let folder = Bundle.main.resourceURL?.appendingPathComponent("Licenses", isDirectory: true),
+           FileManager.default.fileExists(atPath: folder.path) {
+            NSWorkspace.shared.open(folder)
+        } else {
+            NSWorkspace.shared.open(thirdPartyNotices)
+        }
     }
 }

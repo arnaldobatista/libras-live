@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Versão
+        id: versao
+        run: |
+          versao="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
+          if [ "v$versao" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::A tag $GITHUB_REF_NAME não bate com a versão do Info.plist ($versao)."
+            exit 1
+          fi
+          echo "versao=$versao" >> "$GITHUB_OUTPUT"
+
+      - name: Notas da versão
+        env:
+          VERSAO: ${{ steps.versao.outputs.versao }}
+        run: Scripts/release-notes.sh "$VERSAO" > notas.md
+
+      - name: Montar o app
+        run: |
+          xcodebuild -version
+          Scripts/package-app.sh
+
+      - name: Publicar
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSAO: ${{ steps.versao.outputs.versao }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "build/Libras-Live-$VERSAO.zip" \
+            "build/Libras-Live-$VERSAO.zip.sha256" \
+            --title "Libras Live $VERSAO" \
+            --notes-file notas.md
