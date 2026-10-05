@@ -35,20 +35,20 @@ O Libras Live é um projeto independente, sem vínculo com o VLibras, o LAVID/UF
 ## Como funciona
 
 ```
- mesa de som ou microfone                     seu Mac                      serviços do VLibras
-┌────────────────────────┐   ┌──────────────────────────────────────┐   ┌──────────────────────┐
-│ canal de voz           │──►│ captura ─► fala→texto ─► frases      │   │                      │
-└────────────────────────┘   │                            │         │   │                      │
-                             │              [IA local, opcional]    │   │                      │
-                             │                            ▼         │   │                      │
-                             │                          glosa ◄─────┼───┤ tradução             │
-                             │                            ▼         │   │                      │
-                             │   servidor local ◄────── fila        │   │                      │
-                             │       ▲                              │   │                      │
-                             │       └──────────────────────────────┼───┤ dicionário de sinais │
-                             └───────┬──────────────────────────────┘   └──────────────────────┘
-                                     ▼
-                   OBS: fonte de navegador com o avatar
+ mesa ou microfone                    seu Mac                      serviços do VLibras
+┌────────────────┐   ┌──────────────────────────────────────┐   ┌──────────────────────┐
+│ canal de voz   │──►│ captura ─► fala→texto ─► frases      │   │                      │
+└────────────────┘   │                            │         │   │                      │
+                     │                [IA local, opcional]  │   │                      │
+                     │                            ▼         │   │                      │
+                     │                          glosa ◄─────┼───┤ tradução             │
+                     │                            ▼         │   │                      │
+                     │   servidor local ◄────── fila        │   │                      │
+                     │       ▲                              │   │                      │
+                     │       └──────────────────────────────┼───┤ dicionário de sinais │
+                     └───────┬──────────────────────────────┘   └──────────────────────┘
+                             ▼
+           OBS: fonte de navegador com o avatar
 ```
 
 O app roda um servidor que só atende o próprio Mac (`127.0.0.1:8765`). O OBS abre a página do avatar nesse endereço, e o app manda cada glosa por uma conexão WebSocket. Os detalhes de cada etapa estão em [docs/arquitetura.md](docs/arquitetura.md).
